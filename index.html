@@ -234,25 +234,51 @@
         } catch(_) { return raw; }
       }
 
+      const SHORT_DOMAINS = new Set([
+        'bit.ly','tinyurl.com','t.co','amzn.to','goo.gl','ow.ly','buff.ly',
+        'short.io','rebrand.ly','dl.flipkart.com','fkrt.it','myntra.page.link',
+        'instagram.com','fb.me','l.facebook.com'
+      ]);
+
+      function isShortUrl(url) {
+        try {
+          const host = new URL(url).hostname.replace('www.', '');
+          return SHORT_DOMAINS.has(host) || host.split('.')[0].length <= 4;
+        } catch(_) { return false; }
+      }
+
+      async function resolveUrl(url) {
+        if (!isShortUrl(url)) return url;
+        try {
+          const res = await fetch(`https://unshorten.me/api/v1/expand?url=${encodeURIComponent(url)}`);
+          const json = await res.json();
+          return json.resolved_url || url;
+        } catch(_) { return url; }
+      }
+
       function ItemLink({ url, title }) {
         const [img, setImg] = React.useState(null);
         const [name, setName] = React.useState(title);
 
         React.useEffect(() => {
-          const clean = cleanUrl(url);
-          // favicon fallback using Google's service
-          try {
-            const domain = new URL(clean).hostname;
-            setImg(`https://www.google.com/s2/favicons?domain=${domain}&sz=64`);
-          } catch(_) {}
+          (async () => {
+            const resolved = await resolveUrl(url);
+            const clean = cleanUrl(resolved);
 
-          fetch(`https://api.microlink.io?url=${encodeURIComponent(clean)}`)
-            .then(r => r.json())
-            .then(json => {
-              if (json.data?.image?.url) setImg(json.data.image.url); // upgrade to real image if available
+            // favicon fallback immediately
+            try {
+              const domain = new URL(clean).hostname;
+              setImg(`https://www.google.com/s2/favicons?domain=${domain}&sz=64`);
+            } catch(_) {}
+
+            // try microlink for real product image
+            try {
+              const r = await fetch(`https://api.microlink.io?url=${encodeURIComponent(clean)}`);
+              const json = await r.json();
+              if (json.data?.image?.url) setImg(json.data.image.url);
               if (json.data?.title) setName(json.data.title);
-            })
-            .catch(() => {});
+            } catch(_) {}
+          })();
         }, [url]);
 
         return (
