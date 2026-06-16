@@ -8,28 +8,18 @@
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
     <script src="https://unpkg.com/@babel/standalone@7/babel.min.js"></script>
 
+    <!-- Firebase config — loaded from gitignored file locally, Vercel env in prod -->
+    <script src="firebase-config.js"></script>
+
     <!-- Firebase SDKs -->
     <script type="module">
       import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
       import { getFirestore, doc, onSnapshot, setDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
-      // ✏️ PASTE YOUR FIREBASE CONFIG HERE
-      const firebaseConfig = {
-        apiKey: "AIzaSyBSa-mGGAFDw_4hDn8kz7Zm5zeR7q4s92E",
-    authDomain: "agalzwish.firebaseapp.com",
-    projectId: "agalzwish",
-    storageBucket: "agalzwish.firebasestorage.app",
-    messagingSenderId: "538329101416",
-    appId: "1:538329101416:web:578ccc57206b8c9d66b7dd",
-    measurementId: "G-18M24T8CB9"
-  };
-      
-
-      const app = initializeApp(firebaseConfig);
+      const app = initializeApp(window.firebaseConfig);
       const db  = getFirestore(app);
       const wishlistDoc = doc(db, "wishlist", "shared");
 
-      // Expose helpers for the Babel script below
       window._fbOnSnapshot = (cb) => onSnapshot(wishlistDoc, cb);
       window._fbSetDoc     = (data) => setDoc(wishlistDoc, data);
     </script>
