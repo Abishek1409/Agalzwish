@@ -256,35 +256,11 @@
         } catch(_) { return url; }
       }
 
-      function ItemLink({ url, title }) {
-        const [img, setImg] = React.useState(null);
-        const [name, setName] = React.useState(title);
-
-        React.useEffect(() => {
-          (async () => {
-            const resolved = await resolveUrl(url);
-            const clean = cleanUrl(resolved);
-
-            // favicon fallback immediately
-            try {
-              const domain = new URL(clean).hostname;
-              setImg(`https://www.google.com/s2/favicons?domain=${domain}&sz=64`);
-            } catch(_) {}
-
-            // try microlink for real product image
-            try {
-              const r = await fetch(`https://api.microlink.io?url=${encodeURIComponent(clean)}`);
-              const json = await r.json();
-              if (json.data?.image?.url) setImg(json.data.image.url);
-              if (json.data?.title) setName(json.data.title);
-            } catch(_) {}
-          })();
-        }, [url]);
-
+      function ItemLink({ url, title, img: storedImg }) {
         return (
           <a href={url} target="_blank" rel="noopener noreferrer" className="item-link">
-            {img && <img src={img} alt={name} className="item-thumb" />}
-            <span className="item-label">{name}</span>
+            {storedImg && <img src={storedImg} alt={title} className="item-thumb" />}
+            <span className="item-label">{title}</span>
           </a>
         );
       }
@@ -300,7 +276,7 @@
               <ul className="item-list">
                 {items.map((item, i) => (
                   <li key={i} className="item-card">
-                    <ItemLink url={item.url} title={item.title} />
+                    <ItemLink url={item.url} title={item.title} img={item.img} />
                     <button className="remove-btn" onClick={() => onRemove(i)} title="Remove">✕</button>
                   </li>
                 ))}
@@ -369,8 +345,24 @@
           window._fbSetDoc(data);
         }, [data]);
 
-        function addLink({ url, category }) {
-          const item = { url, title: url };
+        async function addLink({ url, category }) {
+          const resolved = await resolveUrl(url);
+          const clean = cleanUrl(resolved);
+
+          // favicon as immediate fallback
+          let img = null;
+          let title = clean;
+          try { img = `https://www.google.com/s2/favicons?domain=${new URL(clean).hostname}&sz=64`; } catch(_) {}
+
+          // try microlink once at add time
+          try {
+            const r = await fetch(`https://api.microlink.io?url=${encodeURIComponent(clean)}`);
+            const json = await r.json();
+            if (json.data?.image?.url) img = json.data.image.url;
+            if (json.data?.title) title = json.data.title;
+          } catch(_) {}
+
+          const item = { url, title, img };
           setData(prev => ({
             ...prev,
             [category]: [...prev[category], item],
