@@ -224,37 +224,13 @@
       function cleanUrl(raw) {
         try {
           const u = new URL(raw);
-          // remove tracking params
           ['utm_source','utm_medium','utm_campaign','utm_content','utm_term','utm_id',
            'fbclid','ad_id','campaign_id','media_type','variant'].forEach(p => u.searchParams.delete(p));
-          // also drop any param starting with 'fb' or 'utm'
           [...u.searchParams.keys()].forEach(k => {
             if (k.startsWith('utm') || k.startsWith('fb')) u.searchParams.delete(k);
           });
           return u.toString();
         } catch(_) { return raw; }
-      }
-
-      const SHORT_DOMAINS = new Set([
-        'bit.ly','tinyurl.com','t.co','amzn.to','goo.gl','ow.ly','buff.ly',
-        'short.io','rebrand.ly','dl.flipkart.com','fkrt.it','myntra.page.link',
-        'instagram.com','fb.me','l.facebook.com'
-      ]);
-
-      function isShortUrl(url) {
-        try {
-          const host = new URL(url).hostname.replace('www.', '');
-          return SHORT_DOMAINS.has(host) || host.split('.')[0].length <= 4;
-        } catch(_) { return false; }
-      }
-
-      async function resolveUrl(url) {
-        if (!isShortUrl(url)) return url;
-        try {
-          const res = await fetch(`https://unshorten.me/api/v1/expand?url=${encodeURIComponent(url)}`);
-          const json = await res.json();
-          return json.resolved_url || url;
-        } catch(_) { return url; }
       }
 
       function ItemLink({ url, title, img: storedImg }) {
@@ -347,15 +323,12 @@
         }, [data]);
 
         async function addLink({ url, category }) {
-          const resolved = await resolveUrl(url);
-          const clean = cleanUrl(resolved);
+          const clean = cleanUrl(url);
 
-          // favicon as immediate fallback
           let img = null;
           let title = clean;
           try { img = `https://www.google.com/s2/favicons?domain=${new URL(clean).hostname}&sz=64`; } catch(_) {}
 
-          // try microlink once at add time
           try {
             const r = await fetch(`https://api.microlink.io?url=${encodeURIComponent(clean)}`);
             const json = await r.json();
