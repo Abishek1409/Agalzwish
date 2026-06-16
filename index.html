@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Partner Wishlist</title>
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/@babel/standalone@7/babel.min.js"></script>
+
+    <!-- Firebase SDKs -->
+    <script type="module">
+      import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+      import { getFirestore, doc, onSnapshot, setDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
+      // ✏️ PASTE YOUR FIREBASE CONFIG HERE
+      const firebaseConfig = {
+        apiKey: "AIzaSyBSa-mGGAFDw_4hDn8kz7Zm5zeR7q4s92E",
+    authDomain: "agalzwish.firebaseapp.com",
+    projectId: "agalzwish",
+    storageBucket: "agalzwish.firebasestorage.app",
+    messagingSenderId: "538329101416",
+    appId: "1:538329101416:web:578ccc57206b8c9d66b7dd",
+    measurementId: "G-18M24T8CB9"
+  };
+      
+
+      const app = initializeApp(firebaseConfig);
+      const db  = getFirestore(app);
+      const wishlistDoc = doc(db, "wishlist", "shared");
+
+      // Expose helpers for the Babel script below
+      window._fbOnSnapshot = (cb) => onSnapshot(wishlistDoc, cb);
+      window._fbSetDoc     = (data) => setDoc(wishlistDoc, data);
+    </script>
+    <style>
+      /* --- Colour tokens (Req 4.1, 4.2, 4.3) --- */
+      :root {
+        --bg:       oklch(97% 0.01 280);
+        --surface:  oklch(100% 0 0);
+        --fg:       oklch(20% 0.02 280);
+        --muted:    oklch(55% 0.02 280);
+        --border:   oklch(88% 0.01 280);
+        --accent:   oklch(55% 0.18 280);
+        --accent-h: oklch(48% 0.20 280);
+      }
+
+      /* --- Reset & base --- */
+      *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+      body {
+        background: var(--bg);
+        color: var(--fg);
+        font-family: system-ui, sans-serif;
+        line-height: 1.5;
+        padding: 2rem 1rem 4rem;
+      }
+
+      /* --- Centred column --- */
+      .container {
+        max-width: 960px;
+        margin: 0 auto;
+        display: flex;
+        flex-direction: column;
+        gap: 2rem;
+      }
+
+      /* --- Page title --- */
+      .app-title {
+        font-size: 1.75rem;
+        font-weight: 700;
+        letter-spacing: -0.02em;
+        color: var(--fg);
+      }
+
+      /* --- Add form (Req 4.1 — above category sections) --- */
+      .add-form {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 1.25rem 1.5rem;
+        display: flex;
+        gap: 0.75rem;
+        flex-wrap: wrap;
+        align-items: center;
+      }
+
+      .url-input {
+        flex: 1 1 260px;
+        padding: 0.55rem 0.85rem;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        font-size: 0.95rem;
+        color: var(--fg);
+        background: var(--bg);
+        outline: none;
+        transition: border-color 0.15s;
+      }
+      .url-input:focus { border-color: var(--accent); }
+
+      .category-select {
+        padding: 0.55rem 0.75rem;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        font-size: 0.95rem;
+        color: var(--fg);
+        background: var(--bg);
+        outline: none;
+        cursor: pointer;
+        transition: border-color 0.15s;
+      }
+      .category-select:focus { border-color: var(--accent); }
+
+      .add-btn {
+        padding: 0.55rem 1.25rem;
+        background: var(--accent);
+        color: #fff;
+        border: none;
+        border-radius: 8px;
+        font-size: 0.95rem;
+        font-weight: 600;
+        cursor: pointer;
+        transition: background 0.15s;
+      }
+      .add-btn:hover { background: var(--accent-h); }
+
+      /* --- Category section (Req 4.2) --- */
+      .category-section {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 1.25rem 1.5rem;
+      }
+
+      .category-heading {
+        font-size: 1.05rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: var(--muted);
+        margin-bottom: 0.85rem;
+      }
+
+      .empty-state {
+        font-size: 0.9rem;
+        color: var(--muted);
+        font-style: italic;
+      }
+
+      /* --- Item list --- */
+      .item-list {
+        list-style: none;
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
+      }
+
+      .item-card {
+        background: var(--bg);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 0.6rem 0.9rem;
+        overflow: hidden;
+      }
+
+      /* --- Item link with hover state (Req 4.3) --- */
+      .item-link {
+        color: var(--accent);
+        text-decoration: none;
+        font-size: 0.9rem;
+        word-break: break-all;
+        transition: color 0.15s, text-decoration-color 0.15s;
+        text-decoration-color: transparent;
+      }
+      .item-link:hover {
+        color: var(--accent-h);
+        text-decoration: underline;
+        text-decoration-color: var(--accent-h);
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="text/babel">
+      // --- Constants & Data Model (Req 1.4) ---
+      const CATEGORIES = ['Bags', 'Kurta', 'Sarees', 'Gowns', 'Tshirt', 'Shirt'];
+
+      const initialData = {
+        Bags: [{ url: 'https://example.com/bag', title: 'https://example.com/bag' }],
+        Kurta: [],
+        Sarees: [],
+        Gowns: [],
+        Tshirt: [],
+        Shirt: [],
+      };
+
+      // --- ItemLink (Req 2.2) ---
+      function ItemLink({ url, title }) {
+        return (
+          <a href={url} target="_blank" rel="noopener noreferrer" className="item-link">
+            {title}
+          </a>
+        );
+      }
+
+      // --- CategorySection (Req 2.1, 2.3) ---
+      function CategorySection({ name, items }) {
+        return (
+          <section className="category-section">
+            <h2 className="category-heading">{name}</h2>
+            {items.length === 0 ? (
+              <p className="empty-state">No items yet.</p>
+            ) : (
+              <ul className="item-list">
+                {items.map((item, i) => (
+                  <li key={i} className="item-card">
+                    <ItemLink url={item.url} title={item.title} />
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+        );
+      }
+
+      // --- AddLinkForm (Req 1.1, 1.2, 1.3, 1.5) ---
+      function AddLinkForm({ onAddLink }) {
+        const [url, setUrl] = React.useState('');
+        const [category, setCategory] = React.useState(CATEGORIES[0]);
+
+        function handleSubmit(e) {
+          e.preventDefault();
+          if (!url.trim()) return; // Req 1.3 — empty URL: do nothing
+          onAddLink({ url: url.trim(), category });
+          setUrl('');          // Req 1.5 — clear URL
+          // category intentionally retained (Req 1.5)
+        }
+
+        return (
+          <form className="add-form" onSubmit={handleSubmit}>
+            <input
+              type="url"
+              className="url-input"
+              placeholder="Paste product URL…"
+              value={url}
+              onChange={e => setUrl(e.target.value)}
+            />
+            <select
+              className="category-select"
+              value={category}
+              onChange={e => setCategory(e.target.value)}
+            >
+              {CATEGORIES.map(cat => (
+                <option key={cat} value={cat}>{cat}</option>
+              ))}
+            </select>
+            <button type="submit" className="add-btn">Add</button>
+          </form>
+        );
+      }
+
+      // --- App root (Req 2.4, 4.1) ---
+      function App() {
+        const [data, setData] = React.useState(initialData);
+        const skipSave = React.useRef(true); // don't write back on first load from Firestore
+
+        // Subscribe to Firestore on mount
+        React.useEffect(() => {
+          const unsub = window._fbOnSnapshot(snapshot => {
+            if (snapshot.exists()) {
+              skipSave.current = true;
+              setData(snapshot.data());
+            }
+          });
+          return unsub;
+        }, []);
+
+        // Save to Firestore whenever data changes (skip the initial snapshot load)
+        React.useEffect(() => {
+          if (skipSave.current) { skipSave.current = false; return; }
+          window._fbSetDoc(data);
+        }, [data]);
+
+        function addLink({ url, category }) {
+          const item = { url, title: url };
+          setData(prev => ({
+            ...prev,
+            [category]: [...prev[category], item],
+          }));
+        }
+
+        return (
+          <div className="container">
+            <h1 className="app-title">Partner Wishlist</h1>
+            <AddLinkForm onAddLink={addLink} />
+            {CATEGORIES.map(cat => (
+              <CategorySection key={cat} name={cat} items={data[cat]} />
+            ))}
+          </div>
+        );
+      }
+
+      // --- Mount ---
+      ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+    </script>
+  </body>
+</html>
