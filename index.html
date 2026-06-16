@@ -176,7 +176,7 @@
       const CATEGORIES = ['Bags', 'Kurta', 'Sarees', 'Gowns', 'Tshirt', 'Shirt'];
 
       const initialData = {
-        Bags: [{ url: 'https://example.com/bag', title: 'https://example.com/bag' }],
+        Bags: [],
         Kurta: [],
         Sarees: [],
         Gowns: [],
@@ -194,7 +194,7 @@
       }
 
       // --- CategorySection (Req 2.1, 2.3) ---
-      function CategorySection({ name, items }) {
+      function CategorySection({ name, items = [] }) {
         return (
           <section className="category-section">
             <h2 className="category-heading">{name}</h2>
@@ -259,7 +259,8 @@
           const unsub = window._fbOnSnapshot(snapshot => {
             if (snapshot.exists()) {
               skipSave.current = true;
-              setData(snapshot.data());
+              // merge with initialData so all categories always exist
+              setData({ ...initialData, ...snapshot.data() });
             }
           });
           return unsub;
