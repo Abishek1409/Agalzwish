@@ -234,9 +234,17 @@
       }
 
       function ItemLink({ url, title, img: storedImg }) {
+        // derive favicon from url if no image was stored
+        const fallback = React.useMemo(() => {
+          try { return `https://www.google.com/s2/favicons?domain=${new URL(url).hostname}&sz=64`; }
+          catch(_) { return null; }
+        }, [url]);
+
+        const imgSrc = storedImg || fallback;
+
         return (
           <a href={url} target="_blank" rel="noopener noreferrer" className="item-link">
-            {storedImg && <img src={storedImg} alt={title} className="item-thumb" />}
+            {imgSrc && <img src={imgSrc} alt={title} className="item-thumb" onError={e => { e.target.style.display='none'; }} />}
             <span className="item-label">{title}</span>
           </a>
         );
