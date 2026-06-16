@@ -151,7 +151,25 @@
         border-radius: 8px;
         padding: 0.6rem 0.9rem;
         overflow: hidden;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.5rem;
       }
+
+      .remove-btn {
+        flex-shrink: 0;
+        background: none;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        color: var(--muted);
+        font-size: 1rem;
+        line-height: 1;
+        padding: 0.25rem 0.5rem;
+        cursor: pointer;
+        transition: color 0.15s, border-color 0.15s;
+      }
+      .remove-btn:hover { color: oklch(50% 0.2 20); border-color: oklch(50% 0.2 20); }
 
       /* --- Item link with hover state (Req 4.3) --- */
       .item-link {
@@ -223,7 +241,7 @@
       }
 
       // --- CategorySection (Req 2.1, 2.3) ---
-      function CategorySection({ name, items = [] }) {
+      function CategorySection({ name, items = [], onRemove }) {
         return (
           <section className="category-section">
             <h2 className="category-heading">{name}</h2>
@@ -234,6 +252,7 @@
                 {items.map((item, i) => (
                   <li key={i} className="item-card">
                     <ItemLink url={item.url} title={item.title} />
+                    <button className="remove-btn" onClick={() => onRemove(i)} title="Remove">✕</button>
                   </li>
                 ))}
               </ul>
@@ -309,12 +328,19 @@
           }));
         }
 
+        function removeLink(category, index) {
+          setData(prev => ({
+            ...prev,
+            [category]: prev[category].filter((_, i) => i !== index),
+          }));
+        }
+
         return (
           <div className="container">
             <h1 className="app-title">Partner Wishlist</h1>
             <AddLinkForm onAddLink={addLink} />
             {CATEGORIES.map(cat => (
-              <CategorySection key={cat} name={cat} items={data[cat]} />
+              <CategorySection key={cat} name={cat} items={data[cat]} onRemove={(i) => removeLink(cat, i)} />
             ))}
           </div>
         );
