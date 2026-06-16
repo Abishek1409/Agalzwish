@@ -218,12 +218,27 @@
       };
 
       // --- ItemCard with OG image preview via microlink (Req 2.2) ---
+      function cleanUrl(raw) {
+        try {
+          const u = new URL(raw);
+          // remove tracking params
+          ['utm_source','utm_medium','utm_campaign','utm_content','utm_term','utm_id',
+           'fbclid','ad_id','campaign_id','media_type','variant'].forEach(p => u.searchParams.delete(p));
+          // also drop any param starting with 'fb' or 'utm'
+          [...u.searchParams.keys()].forEach(k => {
+            if (k.startsWith('utm') || k.startsWith('fb')) u.searchParams.delete(k);
+          });
+          return u.toString();
+        } catch(_) { return raw; }
+      }
+
       function ItemLink({ url, title }) {
         const [img, setImg] = React.useState(null);
         const [name, setName] = React.useState(title);
 
         React.useEffect(() => {
-          fetch(`https://api.microlink.io?url=${encodeURIComponent(url)}`)
+          const clean = cleanUrl(url);
+          fetch(`https://api.microlink.io?url=${encodeURIComponent(clean)}`)
             .then(r => r.json())
             .then(json => {
               if (json.data?.image?.url) setImg(json.data.image.url);
