@@ -321,23 +321,29 @@
       // --- App root (Req 2.4, 4.1) ---
       function App() {
         const [data, setData] = React.useState(initialData);
-        const skipSave = React.useRef(true); // don't write back on first load from Firestore
+        // firestoreLoaded: true only after we receive the first snapshot from Firestore.
+        // We NEVER write to Firestore until this is true, preventing empty initialData
+        // from overwriting real data if the snapshot is delayed.
+        const firestoreLoaded = React.useRef(false);
 
         // Subscribe to Firestore on mount
         React.useEffect(() => {
           const unsub = window._fbOnSnapshot(snapshot => {
+            firestoreLoaded.current = true;
             if (snapshot.exists()) {
-              skipSave.current = true;
               // merge with initialData so all categories always exist
-              setData({ ...initialData, ...snapshot.data() });
+              setData(prev => ({ ...initialData, ...snapshot.data() }));
             }
           });
           return unsub;
         }, []);
 
-        // Save to Firestore whenever data changes (skip the initial snapshot load)
+        // Save to Firestore whenever data changes — but ONLY after the first snapshot.
+        // This prevents a race condition where initialData (empty) would overwrite real data.
+        const isFirstRender = React.useRef(true);
         React.useEffect(() => {
-          if (skipSave.current) { skipSave.current = false; return; }
+          if (isFirstRender.current) { isFirstRender.current = false; return; }
+          if (!firestoreLoaded.current) return; // not yet synced — do not overwrite
           window._fbSetDoc(data);
         }, [data]);
 
@@ -383,8 +389,16 @@
         );
       }
 
-      // --- Mount ---
-      ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+      // --- Mount (wait for Firebase module to be ready) ---
+      function mountApp() {
+        if (typeof window._fbOnSnapshot === 'function') {
+          ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+        } else {
+          // Firebase module script hasn't finished yet — retry in 50 ms
+          setTimeout(mountApp, 50);
+        }
+      }
+      mountApp();
     </script>
   </body>
 </html>
