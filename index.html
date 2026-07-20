@@ -148,6 +148,33 @@
         font-style: italic;
       }
 
+      /* --- Loading / error banner --- */
+      .status-banner {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 1rem 1.5rem;
+        font-size: 0.9rem;
+        color: var(--muted);
+        display: flex;
+        align-items: center;
+        gap: 0.6rem;
+      }
+      .status-banner.error {
+        border-color: oklch(70% 0.18 25);
+        color: oklch(40% 0.2 25);
+        background: oklch(98% 0.02 25);
+      }
+      .spinner {
+        width: 1rem; height: 1rem;
+        border: 2px solid var(--border);
+        border-top-color: var(--accent);
+        border-radius: 50%;
+        animation: spin 0.8s linear infinite;
+        flex-shrink: 0;
+      }
+      @keyframes spin { to { transform: rotate(360deg); } }
+
       /* --- Item list --- */
       .item-list {
         list-style: none;
@@ -321,29 +348,38 @@
       // --- App root (Req 2.4, 4.1) ---
       function App() {
         const [data, setData] = React.useState(initialData);
+        const [loadState, setLoadState] = React.useState('loading'); // 'loading' | 'ok' | 'error'
+        const [errorMsg, setErrorMsg] = React.useState('');
+
         // firestoreLoaded: true only after we receive the first snapshot from Firestore.
-        // We NEVER write to Firestore until this is true, preventing empty initialData
-        // from overwriting real data if the snapshot is delayed.
+        // We NEVER write to Firestore until this is true.
         const firestoreLoaded = React.useRef(false);
 
         // Subscribe to Firestore on mount
         React.useEffect(() => {
-          const unsub = window._fbOnSnapshot(snapshot => {
-            firestoreLoaded.current = true;
-            if (snapshot.exists()) {
-              // merge with initialData so all categories always exist
-              setData(prev => ({ ...initialData, ...snapshot.data() }));
+          const unsub = window._fbOnSnapshot(
+            snapshot => {
+              firestoreLoaded.current = true;
+              setLoadState('ok');
+              if (snapshot.exists()) {
+                setData(prev => ({ ...initialData, ...snapshot.data() }));
+              }
+            },
+            err => {
+              // Firestore read failed (e.g. security rules blocking access)
+              console.error('Firestore error:', err);
+              setLoadState('error');
+              setErrorMsg(err.message || String(err));
             }
-          });
+          );
           return unsub;
         }, []);
 
         // Save to Firestore whenever data changes — but ONLY after the first snapshot.
-        // This prevents a race condition where initialData (empty) would overwrite real data.
         const isFirstRender = React.useRef(true);
         React.useEffect(() => {
           if (isFirstRender.current) { isFirstRender.current = false; return; }
-          if (!firestoreLoaded.current) return; // not yet synced — do not overwrite
+          if (!firestoreLoaded.current) return;
           window._fbSetDoc(data);
         }, [data]);
 
@@ -381,6 +417,17 @@
               <img src="/logo.jpeg" alt="logo" className="app-logo" />
               Partner Wishlist
             </h1>
+            {loadState === 'loading' && (
+              <div className="status-banner">
+                <div className="spinner" />
+                Connecting to database…
+              </div>
+            )}
+            {loadState === 'error' && (
+              <div className="status-banner error">
+                ⚠️ Could not load wishlist: {errorMsg}
+              </div>
+            )}
             <AddLinkForm onAddLink={addLink} />
             {CATEGORIES.map(cat => (
               <CategorySection key={cat} name={cat} items={data[cat]} onRemove={(i) => removeLink(cat, i)} />
