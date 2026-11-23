@@ -23,6 +23,41 @@ const BROWSER_HEADERS = {
   'Sec-Fetch-User': '?1',
 };
 
+
+const TEST_PAGE = `<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Preview tester</title>
+<style>
+ body{font-family:system-ui,sans-serif;margin:0;padding:1rem;background:#f6f5fb;color:#222}
+ h1{font-size:1.2rem}
+ textarea{width:100%;box-sizing:border-box;min-height:5rem;padding:.6rem;border:1px solid #ccc;border-radius:8px;font-size:.95rem}
+ button{margin-top:.6rem;padding:.6rem 1.2rem;border:0;border-radius:8px;background:#5b4bd5;color:#fff;font-weight:600;font-size:.95rem}
+ .card{margin-top:1rem;background:#fff;border:1px solid #ddd;border-radius:10px;padding:.8rem;display:none}
+ .card img{max-width:120px;max-height:120px;border-radius:6px;display:block;margin-bottom:.5rem}
+ pre{white-space:pre-wrap;word-break:break-word;font-size:.8rem;background:#f0f0f0;padding:.6rem;border-radius:6px}
+</style></head><body>
+<h1>Product preview tester</h1>
+<p>Paste a product link or a share message, then tap Test.</p>
+<textarea id="u" placeholder="https://www.flipkart.com/..."></textarea>
+<button id="go">Test</button>
+<div class="card" id="card"><img id="img" alt=""><div id="sum"></div><pre id="raw"></pre></div>
+<script>
+ document.getElementById('go').onclick = async () => {
+   const v = document.getElementById('u').value.trim();
+   if (!v) return;
+   const card = document.getElementById('card'), sum = document.getElementById('sum');
+   card.style.display = 'block'; sum.textContent = 'Testing, this can take up to 30 seconds…';
+   document.getElementById('raw').textContent = ''; document.getElementById('img').style.display = 'none';
+   try {
+     const r = await fetch('/api/preview?url=' + encodeURIComponent(v));
+     const d = await r.json();
+     sum.innerHTML = '<b>Name:</b> ' + (d.title || '(none)') + '<br><b>Price:</b> ' + (d.price ? d.price + ' ' + (d.currency || '') : '(none)') + '<br><b>Source:</b> ' + (d.source || '-');
+     if (d.image) { const i = document.getElementById('img'); i.src = d.image; i.style.display = 'block'; }
+     document.getElementById('raw').textContent = JSON.stringify(d, null, 2);
+   } catch (e) { sum.textContent = 'Request failed: ' + e; }
+ };
+</script></body></html>`;
+
 // ---------- Safety: only fetch public web addresses ----------
 
 function isSafeUrl(raw) {
@@ -410,15 +445,49 @@ async function fetchViaScraper(target, render) {
   }
 }
 
+// Everything after "url=" in the address, so a pasted link keeps its own
+// "&" parts even when it was not encoded.
+function rawUrlParam(req) {
+  const full = String(req.url || '');
+  const at = full.search(/[?&]url=/);
+  if (at === -1) return (req.query && req.query.url) || '';
+  let raw = full.slice(at + 5);
+  try { raw = decodeURIComponent(raw.replace(/\+/g, '%20')); } catch (_) {}
+  return raw;
+}
+
+// Accepts a bare link, a link without https://, or a whole share message
+// such as "Check out this product on Flipkart https://dl.flipkart.com/s/..."
+function extractLink(text) {
+  if (!text) return null;
+  const t = String(text).trim();
+  const m = t.match(/https?:\/\/[^\s<>"']+/i);
+  if (m) return m[0].replace(/[),.;!?]+$/, '');
+  const bare = t.match(/(?:^|\s)((?:www\.)?[a-z0-9-]+(?:\.[a-z0-9-]+)+\/[^\s<>"']*)/i);
+  if (bare) return 'https://' + bare[1].replace(/[),.;!?]+$/, '');
+  return null;
+}
+
+function readTargetUrl(req) {
+  return extractLink(rawUrlParam(req)) || extractLink(req.query && req.query.url);
+}
+
 async function handler(req, res) {
   // Never cache: a shared cache could hand one product's details to a
   // different link. Every link is fetched fresh.
   res.setHeader('Cache-Control', 'private, no-store, max-age=0');
 
-  const url = (req.query && req.query.url) || new URL(req.url, 'http://x').searchParams.get('url');
+  // Opening /api/preview with no link shows a small test page with a paste box.
+  if (!rawUrlParam(req)) {
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.status(200).send(TEST_PAGE);
+    return;
+  }
+
+  const url = readTargetUrl(req);
 
   if (!url || !isSafeUrl(url)) {
-    res.status(400).json({ ok: false, error: 'Give a valid public http(s) link in ?url=' });
+    res.status(400).json({ ok: false, error: 'Give a valid public http(s) link in ?url=', received: rawUrlParam(req) });
     return;
   }
 
@@ -481,5 +550,7 @@ async function handler(req, res) {
 module.exports = handler;
 module.exports.extract = extract;
 module.exports.isSafeUrl = isSafeUrl;
+module.exports.extractLink = extractLink;
+module.exports.readTargetUrl = readTargetUrl;
 module.exports.cleanTitle = cleanTitle;
 module.exports.nameFromUrl = nameFromUrl;
