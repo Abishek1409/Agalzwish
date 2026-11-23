@@ -443,9 +443,11 @@
       async function fetchProductDetails(url) {
         const own = await fetchFromOwnPreview(url);
         if (own.title && own.img && own.price) return own;
-        const ml = await fetchFromMicrolink(url);
+        const ml = await fetchFromMicrolink(own.finalUrl || url);
         return {
-          title: own.title || ml.title,
+          finalUrl: own.finalUrl,
+          // A real page title beats a name built from the link.
+          title: (own.img || own.price ? own.title : null) || ml.title || own.title || nameFromUrl(own.finalUrl || ''),
           img: own.img || ml.img,
           price: own.price || ml.price,
         };
@@ -457,8 +459,11 @@
           const r = await fetch(`/api/preview?url=${encodeURIComponent(url)}`);
           if (!r.ok) return details;
           const d = await r.json();
-          if (!d.ok) return details;
+          // Even when the shop blocked the page, the server still sends a name
+          // built from the real product address (share links unwrapped).
           details.title = cleanTitle(d.title);
+          details.finalUrl = d.finalUrl || null;
+          if (!d.ok) return details;
           details.img = d.image || null;
           details.price = d.price ? formatPrice(d.price, d.currency) : null;
         } catch(_) {}
@@ -729,6 +734,8 @@
           const item = {
             url,
             title: details.title || nameFromUrl(clean) || clean,
+            // Keep the original link, but remember the real product page too.
+            ...(details.finalUrl && details.finalUrl !== url ? { productUrl: details.finalUrl } : {}),
             img: details.img || img,
             price: price || null,
             addedAt: Date.now(),
