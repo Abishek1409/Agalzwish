@@ -29,6 +29,18 @@
       window._fbAddItem = (category, item) =>
         setDoc(wishlistDoc, { [category]: arrayUnion(item) }, { merge: true });
 
+      // Changes one item's price. Runs as a transaction on the latest server copy,
+      // so items added at the same moment from another device are kept.
+      window._fbUpdateItemPrice = (category, item, price) =>
+        runTransaction(db, async (tx) => {
+          const snap = await tx.get(wishlistDoc);
+          const list = snap.exists() && Array.isArray(snap.data()[category]) ? snap.data()[category] : [];
+          const same = (a) => a.url === item.url && (a.addedAt ?? null) === (item.addedAt ?? null) && a.title === item.title;
+          if (!list.some(same)) throw new Error("This item was changed or removed on another device.");
+          const updated = list.map(a => same(a) ? { ...a, price: price || null } : a);
+          tx.set(wishlistDoc, { [category]: updated }, { merge: true });
+        });
+
       window._fbRemoveItem = (category, item) =>
         setDoc(wishlistDoc, { [category]: arrayRemove(item) }, { merge: true });
 
@@ -268,6 +280,30 @@
 
       .price-input { flex: 0 1 130px; }
 
+      .item-main { display: flex; flex-direction: column; gap: 0.35rem; min-width: 0; }
+      .price-btn {
+        align-self: flex-start;
+        margin-left: calc(72px + 0.75rem);
+        background: none;
+        border: 1px dashed transparent;
+        border-radius: 6px;
+        padding: 0.1rem 0.4rem;
+        font-size: 0.85rem;
+        font-weight: 700;
+        color: var(--fg);
+        cursor: pointer;
+      }
+      .price-btn:hover { border-color: var(--border); }
+      .price-edit { display: flex; gap: 0.35rem; margin-left: calc(72px + 0.75rem); flex-wrap: wrap; }
+      .price-edit-input {
+        width: 110px;
+        padding: 0.25rem 0.5rem;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        font-size: 0.85rem;
+        background: var(--surface);
+      }
+
       .add-btn:disabled { opacity: 0.6; cursor: wait; }
 
       .form-note {
@@ -365,6 +401,45 @@
       // 1. Our own Vercel function (/api/preview) fetches the page directly and
       //    understands Amazon, Flipkart and Myntra pages.
       // 2. microlink fills in anything still missing.
+      // Same cleanup the server does, applied to microlink titles too.
+      function cleanTitle(title) {
+        if (!title) return null;
+        let t = String(title).replace(/\s+/g, ' ').trim();
+        t = t
+          .replace(/^Amazon\.[a-z.]+\s*:\s*/i, '')
+          .replace(/\s*:\s*Amazon\.[a-z.]+.*$/i, '')
+          .replace(/\s*[|\-–]\s*(Buy\s.*)?(Online\s)?(at\s)?(Low|Best)\s+Prices?\s+in\s+India.*$/i, '')
+          .replace(/\s+Online at (Low|Best) Prices? in India.*$/i, '')
+          .replace(/\s*[|\-–]\s*(Flipkart|Myntra|Amazon|Nykaa|Ajio|Meesho|Tata\s?CLiQ)(\.com|\.in)?\s*$/i, '')
+          .replace(/\s*\|\s*Reviews?\s*&\s*Ratings.*$/i, '')
+          .replace(/\s+[-–|]\s+Buy\s.*$/i, '')
+          .replace(/^Buy\s+/i, '')
+          .replace(/\s+\d{6,}(?=\s|$)/g, '')
+          .replace(/\s+[-–]\s+[A-Za-z &]+\s+for\s+(Men|Women|Boys|Girls|Kids|Unisex)(\s+\d+)?\s*$/i, '')
+          .replace(/\s*[|\-–:]\s*$/, '')
+          .trim();
+        if (t.length > 110) t = t.slice(0, 110).replace(/\s+\S*$/, '') + '…';
+        // Titles that are only the shop name are useless as a product name.
+        if (/^(amazon|flipkart|myntra|nykaa|ajio|meesho)(\.[a-z.]+)?$/i.test(t)) return null;
+        if (/^(site maintenance|access denied|robot check|just a moment)/i.test(t)) return null;
+        return t || null;
+      }
+
+      // Builds a readable name from the link when the shop shares nothing.
+      function nameFromUrl(raw) {
+        let u;
+        try { u = new URL(raw); } catch (_) { return null; }
+        const parts = u.pathname.split('/').map(p => { try { return decodeURIComponent(p); } catch(_) { return p; } }).filter(Boolean);
+        const words = parts
+          .filter(p => /[a-z]/i.test(p) && /[-_]/.test(p))
+          .filter(p => !/^(dp|gp|p|buy|product|products|itm[0-9a-f]+)$/i.test(p));
+        if (!words.length) return null;
+        const best = words.sort((a, b) => b.length - a.length)[0];
+        const name = best.replace(/[-_]+/g, ' ').replace(/\b\d{6,}\b/g, '').replace(/\s+/g, ' ').trim()
+          .replace(/\b\w/g, c => c.toUpperCase());
+        return name.length >= 4 ? name : null;
+      }
+
       async function fetchProductDetails(url) {
         const own = await fetchFromOwnPreview(url);
         if (own.title && own.img && own.price) return own;
@@ -383,7 +458,7 @@
           if (!r.ok) return details;
           const d = await r.json();
           if (!d.ok) return details;
-          details.title = d.title || null;
+          details.title = cleanTitle(d.title);
           details.img = d.image || null;
           details.price = d.price ? formatPrice(d.price, d.currency) : null;
         } catch(_) {}
@@ -405,7 +480,7 @@
           const r = await fetch(`https://api.microlink.io/?${qs.toString()}`);
           const json = await r.json();
           const d = json.data || {};
-          if (d.title) details.title = d.title;
+          if (d.title) details.title = cleanTitle(d.title);
           if (d.image?.url) details.img = d.image.url;
           details.price =
             formatPrice(d.price, d.currency) ||
@@ -416,6 +491,44 @@
       }
 
       // --- ItemCard with OG image preview via microlink (Req 2.2) ---
+      function PriceTag({ price, onSave }) {
+        const [editing, setEditing] = React.useState(false);
+        const [value, setValue] = React.useState(price || '');
+        const [saving, setSaving] = React.useState(false);
+
+        async function save(e) {
+          e.preventDefault();
+          setSaving(true);
+          const v = value.trim();
+          const formatted = v ? (findPriceInText(v) || formatPrice(v, 'INR') || v) : null;
+          const ok = await onSave(formatted);
+          setSaving(false);
+          if (ok) setEditing(false);
+        }
+
+        if (editing) {
+          return (
+            <form className="price-edit" onSubmit={save}>
+              <input
+                className="price-edit-input"
+                value={value}
+                onChange={e => setValue(e.target.value)}
+                placeholder="e.g. 1299"
+                inputMode="decimal"
+                autoFocus
+              />
+              <button className="ghost-btn" type="submit" disabled={saving}>{saving ? '…' : 'Save'}</button>
+              <button className="ghost-btn" type="button" onClick={() => { setEditing(false); setValue(price || ''); }}>Cancel</button>
+            </form>
+          );
+        }
+        return (
+          <button className="price-btn" onClick={() => { setValue(price || ''); setEditing(true); }} title="Edit price">
+            {price ? price : '+ Add price'}
+          </button>
+        );
+      }
+
       function ItemLink({ url, title, img: storedImg, price }) {
         // derive favicon from url if no image was stored
         const fallback = React.useMemo(() => {
@@ -430,14 +543,13 @@
             {imgSrc && <img src={imgSrc} alt={title} className="item-thumb" onError={e => { e.target.style.display='none'; }} />}
             <span className="item-text">
               <span className="item-label">{title || url}</span>
-              {price && <span className="item-price">{price}</span>}
             </span>
           </a>
         );
       }
 
       // --- CategorySection (Req 2.1, 2.3) ---
-      function CategorySection({ name, items = [], onRemove, canDelete, onDeleteCategory }) {
+      function CategorySection({ name, items = [], onRemove, onPriceChange, canDelete, onDeleteCategory }) {
         return (
           <section className="category-section">
             <div className="heading-row">
@@ -454,7 +566,10 @@
               <ul className="item-list">
                 {items.map((item, i) => (
                   <li key={(item.url || '') + i} className="item-card">
-                    <ItemLink url={item.url} title={item.title} img={item.img} price={item.price} />
+                    <div className="item-main">
+                      <ItemLink url={item.url} title={item.title} img={item.img} />
+                      <PriceTag price={item.price} onSave={(p) => onPriceChange(item, p)} />
+                    </div>
                     <button className="remove-btn" onClick={() => onRemove(item)} title="Remove">✕</button>
                   </li>
                 ))}
@@ -613,7 +728,7 @@
           // Firestore rejects undefined, so every field is a real value or null.
           const item = {
             url,
-            title: details.title || clean,
+            title: details.title || nameFromUrl(clean) || clean,
             img: details.img || img,
             price: price || null,
             addedAt: Date.now(),
@@ -629,13 +744,18 @@
             ok: true,
             message: item.price
               ? `Added to ${category}.`
-              : `Added to ${category}. The shop did not share a price, you can type it in next time.`,
+              : `Added to ${category}. The shop did not share a price. Tap "+ Add price" on the item to add it.`,
           };
         }
 
         async function removeLink(category, item) {
           try { await window._fbRemoveItem(category, item); }
           catch (err) { console.error(err); alert('Could not remove the item: ' + (err.message || err)); }
+        }
+
+        async function changePrice(category, item, price) {
+          try { await window._fbUpdateItemPrice(category, item, price); return true; }
+          catch (err) { console.error(err); alert('Could not save the price: ' + (err.message || err)); return false; }
         }
 
         return (
@@ -664,6 +784,7 @@
                 name={cat}
                 items={Array.isArray(data[cat]) ? data[cat] : []}
                 onRemove={(item) => removeLink(cat, item)}
+                onPriceChange={(item, price) => changePrice(cat, item, price)}
                 canDelete={customCategories.includes(cat)}
                 onDeleteCategory={() => deleteCategory(cat)}
               />
