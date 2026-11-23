@@ -7,7 +7,7 @@
 //
 // Response: { ok, title, image, price, currency, finalUrl, blocked }
 
-const TIMEOUT_MS = 9000;
+const TIMEOUT_MS = 7000;
 const MAX_BYTES = 3 * 1024 * 1024;
 
 const BROWSER_HEADERS = {
@@ -350,22 +350,61 @@ async function readLimited(res) {
   return Buffer.concat(chunks.map(c => Buffer.from(c))).toString('utf8');
 }
 
-async function fetchHtml(target, useScraper) {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), useScraper ? 25000 : TIMEOUT_MS);
-  try {
-    let fetchUrl = target;
-    let opts = { headers: BROWSER_HEADERS, redirect: 'follow', signal: controller.signal };
-    if (useScraper) {
-      // ScraperAPI fetches the page through residential addresses in India.
-      const qs = new URLSearchParams({ api_key: process.env.SCRAPER_API_KEY, url: target, country_code: 'in' });
-      fetchUrl = `https://api.scraperapi.com/?${qs.toString()}`;
-      opts = { redirect: 'follow', signal: controller.signal };
+// Follows redirects one hop at a time (checking each address is public).
+// Short share links like dl.flipkart.com/s/... or myntr.it/... answer with a
+// plain redirect even when the shop itself blocks us, so this always recovers
+// the real product address with its readable name in it.
+async function resolveRedirects(target) {
+  let current = target;
+  for (let hop = 0; hop < 6; hop++) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 5000);
+    try {
+      const r = await fetch(current, { headers: BROWSER_HEADERS, redirect: 'manual', signal: controller.signal });
+      const loc = r.headers && r.headers.get && r.headers.get('location');
+      if (r.status >= 300 && r.status < 400 && loc) {
+        const next = new URL(loc, current).toString();
+        if (!isSafeUrl(next)) return current;
+        current = next;
+        continue;
+      }
+      return current;
+    } catch (_) {
+      return current;
+    } finally {
+      clearTimeout(timer);
     }
-    const r = await fetch(fetchUrl, opts);
-    const finalUrl = useScraper ? target : (r.url || target);
+  }
+  return current;
+}
+
+async function fetchDirect(target) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+  try {
+    const r = await fetch(target, { headers: BROWSER_HEADERS, redirect: 'follow', signal: controller.signal });
+    return { status: r.status, ok: r.ok, finalUrl: r.url || target, html: await readLimited(r) };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+// ScraperAPI fetches the page through its own rotating addresses. No country
+// is requested: choosing India needs their Business plan, and asking for it on
+// the free plan makes every request fail.
+async function fetchViaScraper(target, render) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), render ? 40000 : 25000);
+  try {
+    const params = { api_key: process.env.SCRAPER_API_KEY, url: target };
+    if (render) params.render = 'true';
+    const r = await fetch(`https://api.scraperapi.com/?${new URLSearchParams(params).toString()}`, { signal: controller.signal });
     const html = await readLimited(r);
-    return { status: r.status, ok: r.ok, finalUrl, html };
+    if (!r.ok) {
+      const reason = html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 160);
+      throw new Error(`HTTP ${r.status}${reason ? ': ' + reason : ''}`);
+    }
+    return { status: r.status, ok: true, finalUrl: target, html };
   } finally {
     clearTimeout(timer);
   }
@@ -383,50 +422,59 @@ async function handler(req, res) {
     return;
   }
 
-  let data = { ok: false, blocked: false, title: null, image: null, price: null, currency: null, finalUrl: url };
+  // 0. Unwrap share links to the real product page first.
+  const productUrl = await resolveRedirects(url);
+
+  let data = { ok: false, blocked: false, title: null, image: null, price: null, currency: null, finalUrl: productUrl };
   let source = 'none';
-  let lastError = null;
+  const errors = [];
 
   // 1. Direct fetch from Vercel (free, works for many shops).
   try {
-    const page = await fetchHtml(url, false);
-    if (!isSafeUrl(page.finalUrl)) {
-      res.status(400).json({ ok: false, error: 'The link redirected somewhere that is not allowed.' });
-      return;
+    const page = await fetchDirect(productUrl);
+    if (isSafeUrl(page.finalUrl)) {
+      data = extract(page.html, page.finalUrl);
+      data.status = page.status;
+      if (!page.ok && !data.ok) data.blocked = true;
+      source = 'direct';
     }
-    data = extract(page.html, page.finalUrl);
-    data.status = page.status;
-    if (!page.ok && !data.ok) data.blocked = true;
-    source = 'direct';
   } catch (err) {
-    lastError = err.name === 'AbortError' ? 'The shop took too long to answer.' : String(err.message || err);
+    errors.push('direct: ' + (err.name === 'AbortError' ? 'timed out' : String(err.message || err)));
   }
 
   // 2. If the shop blocked us or hid the price, try ScraperAPI (only when a key is set).
+  //    A plain request first; if that still has no price, one with page rendering.
   if (process.env.SCRAPER_API_KEY && (!data.ok || !data.price)) {
-    try {
-      const page = await fetchHtml(data.finalUrl || url, true);
-      const viaScraper = extract(page.html, data.finalUrl || url);
-      if (viaScraper.ok) {
-        data = {
-          ...viaScraper,
-          title: viaScraper.title || data.title,
-          image: viaScraper.image || data.image,
-          status: page.status,
-        };
-        source = 'scraperapi';
+    for (const render of [false, true]) {
+      try {
+        const page = await fetchViaScraper(data.finalUrl || productUrl, render);
+        const via = extract(page.html, data.finalUrl || productUrl);
+        if (via.ok) {
+          data = {
+            ...via,
+            title: via.title || data.title,
+            image: via.image || data.image,
+            price: via.price || data.price,
+            currency: via.price ? via.currency : data.currency,
+            status: page.status,
+          };
+          source = render ? 'scraperapi-render' : 'scraperapi';
+        } else if (via.blocked) {
+          errors.push(`scraperapi${render ? ' render' : ''}: the shop showed a block page`);
+        }
+        if (data.ok && data.price) break;
+      } catch (err) {
+        errors.push(`scraperapi${render ? ' render' : ''}: ` + (err.name === 'AbortError' ? 'timed out' : String(err.message || err)));
       }
-    } catch (err) {
-      lastError = 'ScraperAPI: ' + (err.name === 'AbortError' ? 'timed out' : String(err.message || err));
     }
   }
 
-  // 3. Never return an empty name: build one from the link if needed.
-  if (!data.title) data.title = nameFromUrl(data.finalUrl || url);
+  // 3. Never return an empty name: build one from the product address if needed.
+  if (!data.title) data.title = nameFromUrl(data.finalUrl || productUrl) || nameFromUrl(url);
 
   data.source = source;
   data.scraperConfigured = Boolean(process.env.SCRAPER_API_KEY);
-  if (lastError) data.error = lastError;
+  if (errors.length) data.errors = errors;
   res.status(200).json(data);
 }
 
