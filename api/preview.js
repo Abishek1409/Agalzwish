@@ -108,6 +108,53 @@ function readJsonAfter(html, marker) {
   return null;
 }
 
+
+// ---------- Title cleanup ----------
+
+// Shops stuff their page titles with sales wording, for example
+// "Amazon.in: Buy Lavie Tote Bag Online at Low Prices in India | Reviews".
+// This keeps only the product name.
+function cleanTitle(title) {
+  if (!title) return null;
+  let t = decodeEntities(String(title)).replace(/\s+/g, ' ').trim();
+  t = t
+    .replace(/^Amazon\.[a-z.]+\s*:\s*/i, '')
+    .replace(/\s*:\s*Amazon\.[a-z.]+.*$/i, '')
+    .replace(/\s*[|\-–]\s*(Buy\s.*)?(Online\s)?(at\s)?(Low|Best)\s+Prices?\s+in\s+India.*$/i, '')
+    .replace(/\s+Online at (Low|Best) Prices? in India.*$/i, '')
+    .replace(/\s*[|\-–]\s*(Flipkart|Myntra|Amazon|Nykaa|Ajio|Meesho|Tata\s?CLiQ)(\.com|\.in)?\s*$/i, '')
+    .replace(/\s*\|\s*Reviews?\s*&\s*Ratings.*$/i, '')
+    .replace(/\s+[-–|]\s+Buy\s.*$/i, '')     // Flipkart "X - Buy X Online at ..."
+    .replace(/^Buy\s+/i, '')
+    .replace(/\s+\d{6,}(?=\s|$)/g, '')         // product ids (Myntra)
+    .replace(/\s+[-–]\s+[A-Za-z &]+\s+for\s+(Men|Women|Boys|Girls|Kids|Unisex)(\s+\d+)?\s*$/i, '')
+    .replace(/\s+\d{6,}\s*$/, '')            // trailing product id (Myntra)
+    .replace(/\s*[|\-–:]\s*$/, '')
+    .trim();
+  if (t.length > 110) t = t.slice(0, 110).replace(/\s+\S*$/, '') + '…';
+  return t || null;
+}
+
+// Builds a readable name from the link itself, used when the shop blocks us.
+// flipkart.com/puma-r22-sneakers-men/p/itm0f... -> "Puma R22 Sneakers Men"
+function nameFromUrl(raw) {
+  let u;
+  try { u = new URL(raw); } catch (_) { return null; }
+  const parts = u.pathname.split('/').map(p => decodeURIComponent(p)).filter(Boolean);
+  const words = parts
+    .filter(p => /[a-z]/i.test(p) && /[-_]/.test(p))
+    .filter(p => !/^(dp|gp|p|buy|product|products|itm[0-9a-f]+)$/i.test(p));
+  if (!words.length) return null;
+  const best = words.sort((a, b) => b.length - a.length)[0];
+  const name = best
+    .replace(/[-_]+/g, ' ')
+    .replace(/\b\d{6,}\b/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/\b\w/g, c => c.toUpperCase());
+  return name.length >= 4 ? name : null;
+}
+
 // ---------- Generic extractors ----------
 
 function readMetaTags(html) {
@@ -278,7 +325,7 @@ function extract(html, finalUrl) {
   return {
     ok: !blocked && Boolean(title || image || price),
     blocked,
-    title: blocked ? null : title || null,
+    title: blocked ? null : cleanTitle(title),
     image: blocked ? null : image || null,
     price: blocked ? null : price,
     currency: blocked ? null : currency,
@@ -303,7 +350,32 @@ async function readLimited(res) {
   return Buffer.concat(chunks.map(c => Buffer.from(c))).toString('utf8');
 }
 
+async function fetchHtml(target, useScraper) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), useScraper ? 25000 : TIMEOUT_MS);
+  try {
+    let fetchUrl = target;
+    let opts = { headers: BROWSER_HEADERS, redirect: 'follow', signal: controller.signal };
+    if (useScraper) {
+      // ScraperAPI fetches the page through residential addresses in India.
+      const qs = new URLSearchParams({ api_key: process.env.SCRAPER_API_KEY, url: target, country_code: 'in' });
+      fetchUrl = `https://api.scraperapi.com/?${qs.toString()}`;
+      opts = { redirect: 'follow', signal: controller.signal };
+    }
+    const r = await fetch(fetchUrl, opts);
+    const finalUrl = useScraper ? target : (r.url || target);
+    const html = await readLimited(r);
+    return { status: r.status, ok: r.ok, finalUrl, html };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 async function handler(req, res) {
+  // Never cache: a shared cache could hand one product's details to a
+  // different link. Every link is fetched fresh.
+  res.setHeader('Cache-Control', 'private, no-store, max-age=0');
+
   const url = (req.query && req.query.url) || new URL(req.url, 'http://x').searchParams.get('url');
 
   if (!url || !isSafeUrl(url)) {
@@ -311,32 +383,55 @@ async function handler(req, res) {
     return;
   }
 
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+  let data = { ok: false, blocked: false, title: null, image: null, price: null, currency: null, finalUrl: url };
+  let source = 'none';
+  let lastError = null;
+
+  // 1. Direct fetch from Vercel (free, works for many shops).
   try {
-    const upstream = await fetch(url, { headers: BROWSER_HEADERS, redirect: 'follow', signal: controller.signal });
-    const finalUrl = upstream.url || url;
-    if (!isSafeUrl(finalUrl)) {
+    const page = await fetchHtml(url, false);
+    if (!isSafeUrl(page.finalUrl)) {
       res.status(400).json({ ok: false, error: 'The link redirected somewhere that is not allowed.' });
       return;
     }
-    const html = await readLimited(upstream);
-    const data = extract(html, finalUrl);
-    if (!upstream.ok && !data.ok) data.blocked = data.blocked || upstream.status === 403 || upstream.status === 503;
-    data.status = upstream.status;
-
-    // Never cache: a shared cache could hand one product's details to a
-    // different link. Every link is fetched fresh.
-    res.setHeader('Cache-Control', 'private, no-store, max-age=0');
-    res.status(200).json(data);
+    data = extract(page.html, page.finalUrl);
+    data.status = page.status;
+    if (!page.ok && !data.ok) data.blocked = true;
+    source = 'direct';
   } catch (err) {
-    res.setHeader('Cache-Control', 'no-store');
-    res.status(200).json({ ok: false, error: err.name === 'AbortError' ? 'The shop took too long to answer.' : String(err.message || err) });
-  } finally {
-    clearTimeout(timer);
+    lastError = err.name === 'AbortError' ? 'The shop took too long to answer.' : String(err.message || err);
   }
+
+  // 2. If the shop blocked us or hid the price, try ScraperAPI (only when a key is set).
+  if (process.env.SCRAPER_API_KEY && (!data.ok || !data.price)) {
+    try {
+      const page = await fetchHtml(data.finalUrl || url, true);
+      const viaScraper = extract(page.html, data.finalUrl || url);
+      if (viaScraper.ok) {
+        data = {
+          ...viaScraper,
+          title: viaScraper.title || data.title,
+          image: viaScraper.image || data.image,
+          status: page.status,
+        };
+        source = 'scraperapi';
+      }
+    } catch (err) {
+      lastError = 'ScraperAPI: ' + (err.name === 'AbortError' ? 'timed out' : String(err.message || err));
+    }
+  }
+
+  // 3. Never return an empty name: build one from the link if needed.
+  if (!data.title) data.title = nameFromUrl(data.finalUrl || url);
+
+  data.source = source;
+  data.scraperConfigured = Boolean(process.env.SCRAPER_API_KEY);
+  if (lastError) data.error = lastError;
+  res.status(200).json(data);
 }
 
 module.exports = handler;
 module.exports.extract = extract;
 module.exports.isSafeUrl = isSafeUrl;
+module.exports.cleanTitle = cleanTitle;
+module.exports.nameFromUrl = nameFromUrl;
