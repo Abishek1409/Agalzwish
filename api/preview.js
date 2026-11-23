@@ -248,7 +248,7 @@ function extract(html, finalUrl) {
 
   const blocked =
     /api-services-support@amazon\.com|\/errors\/validateCaptcha|Enter the characters you see below/i.test(html) ||
-    /<title>\s*(Access Denied|Just a moment\.\.\.|Attention Required)/i.test(html);
+    /<title>\s*(Site Maintenance|Access Denied|Just a moment\.\.\.|Attention Required|Robot Check|Are you a human)/i.test(html);
 
   const meta = readMetaTags(html);
   const ld = readJsonLd(html);
@@ -325,8 +325,9 @@ async function handler(req, res) {
     if (!upstream.ok && !data.ok) data.blocked = data.blocked || upstream.status === 403 || upstream.status === 503;
     data.status = upstream.status;
 
-    // Cache good results at the edge for an hour so repeated links are instant.
-    res.setHeader('Cache-Control', data.ok ? 's-maxage=3600, stale-while-revalidate=86400' : 'no-store');
+    // Never cache: a shared cache could hand one product's details to a
+    // different link. Every link is fetched fresh.
+    res.setHeader('Cache-Control', 'private, no-store, max-age=0');
     res.status(200).json(data);
   } catch (err) {
     res.setHeader('Cache-Control', 'no-store');
