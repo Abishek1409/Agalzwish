@@ -15,14 +15,38 @@
     <!-- Firebase SDKs -->
     <script type="module">
       import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-      import { getFirestore, doc, onSnapshot, setDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+      import { getFirestore, doc, onSnapshot, setDoc, arrayUnion, arrayRemove, deleteField, runTransaction } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
       const app = initializeApp(window.firebaseConfig);
       const db  = getFirestore(app);
       const wishlistDoc = doc(db, "wishlist", "shared");
 
-      window._fbOnSnapshot = (cb) => onSnapshot(wishlistDoc, cb);
-      window._fbSetDoc     = (data) => setDoc(wishlistDoc, data);
+      window._fbOnSnapshot = (cb, errCb) => onSnapshot(wishlistDoc, cb, errCb);
+
+      // Every write below is a MERGE that touches only one field. The document is
+      // never overwritten as a whole, so items added from another phone or tab at
+      // the same moment are never lost.
+      window._fbAddItem = (category, item) =>
+        setDoc(wishlistDoc, { [category]: arrayUnion(item) }, { merge: true });
+
+      window._fbRemoveItem = (category, item) =>
+        setDoc(wishlistDoc, { [category]: arrayRemove(item) }, { merge: true });
+
+      window._fbAddCategory = (name) =>
+        setDoc(wishlistDoc, { customCategories: arrayUnion(name) }, { merge: true });
+
+      // Removes a category only if it is still empty when the delete runs. The
+      // check and the delete happen inside one transaction, so an item added from
+      // another device at the same moment can never be thrown away.
+      window._fbRemoveCategory = (name) =>
+        runTransaction(db, async (tx) => {
+          const snap = await tx.get(wishlistDoc);
+          const items = snap.exists() ? snap.data()[name] : undefined;
+          if (Array.isArray(items) && items.length > 0) {
+            throw new Error("This category has items now, so it was kept.");
+          }
+          tx.set(wishlistDoc, { customCategories: arrayRemove(name), [name]: deleteField() }, { merge: true });
+        });
     </script>
     <style>
       /* --- Colour tokens (Req 4.1, 4.2, 4.3) --- */
@@ -235,6 +259,43 @@
         word-break: break-word;
         text-decoration: none;
       }
+      .item-text { display: flex; flex-direction: column; gap: 0.2rem; }
+      .item-price {
+        font-size: 0.85rem;
+        font-weight: 700;
+        color: var(--fg);
+      }
+
+      .price-input { flex: 0 1 130px; }
+
+      .add-btn:disabled { opacity: 0.6; cursor: wait; }
+
+      .form-note {
+        flex-basis: 100%;
+        font-size: 0.85rem;
+        color: var(--muted);
+      }
+      .form-note.error { color: oklch(45% 0.2 25); }
+
+      .heading-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.5rem;
+        margin-bottom: 0.85rem;
+      }
+      .heading-row .category-heading { margin-bottom: 0; }
+
+      .ghost-btn {
+        background: none;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        color: var(--muted);
+        font-size: 0.8rem;
+        padding: 0.25rem 0.6rem;
+        cursor: pointer;
+      }
+      .ghost-btn:hover { color: var(--accent); border-color: var(--accent); }
       .item-link:hover .item-label {
         text-decoration: underline;
         text-decoration-color: var(--accent-h);
@@ -245,22 +306,27 @@
     <div id="root"></div>
     <script type="text/babel">
       // --- Constants & Data Model (Req 1.4) ---
-      const CATEGORIES = ['Bags', 'Kurta', 'Sarees', 'Gowns', 'Tshirt', 'Shirt', 'Watch', 'Skirt', 'Shoes', 'Accessories'];
+      // Built in categories. Categories the user creates are stored in Firestore
+      // under the "customCategories" field of the same wishlist/shared document.
+      const DEFAULT_CATEGORIES = ['Bags', 'Kurta', 'Sarees', 'Gowns', 'Tshirt', 'Shirt', 'Watch', 'Skirt', 'Shoes', 'Accessories'];
+      const RESERVED_FIELDS = ['customCategories'];
+      const NEW_CATEGORY_OPTION = '__new__';
 
-      const initialData = {
-        Bags: [],
-        Kurta: [],
-        Sarees: [],
-        Gowns: [],
-        Tshirt: [],
-        Shirt: [],
-        Watch: [],
-        Skirt: [],
-        Shoes: [],
-        Accessories: [],
-      };
+      // Works out the full list of categories to show. Any array field found in
+      // the document is shown too, so no stored item can ever become invisible.
+      function getCategories(data) {
+        const custom = Array.isArray(data.customCategories)
+          ? data.customCategories.filter(c => typeof c === 'string')
+          : [];
+        const extra = Object.keys(data).filter(k =>
+          !RESERVED_FIELDS.includes(k) && Array.isArray(data[k]));
+        const all = [];
+        [...DEFAULT_CATEGORIES, ...custom, ...extra].forEach(c => {
+          if (!all.includes(c)) all.push(c);
+        });
+        return all;
+      }
 
-      // --- ItemCard with OG image preview via microlink (Req 2.2) ---
       function cleanUrl(raw) {
         try {
           const u = new URL(raw);
@@ -273,7 +339,84 @@
         } catch(_) { return raw; }
       }
 
-      function ItemLink({ url, title, img: storedImg }) {
+      // --- Price helpers ---
+      function formatPrice(amount, currency) {
+        const num = Number(String(amount).replace(/[^0-9.]/g, ''));
+        if (!amount || !isFinite(num) || num <= 0) return null;
+        const cur = (currency || 'INR').toUpperCase();
+        try {
+          return new Intl.NumberFormat('en-IN', { style: 'currency', currency: cur, maximumFractionDigits: 2 }).format(num);
+        } catch(_) {
+          return `${cur} ${num}`;
+        }
+      }
+
+      // Looks for a price written in plain text, such as "Rs. 1,299" or "₹999".
+      function findPriceInText(text) {
+        if (!text) return null;
+        const m = String(text).match(/(₹|Rs\.?|INR|\$|USD)\s?([0-9][0-9,]*(?:\.[0-9]{1,2})?)/i);
+        if (!m) return null;
+        const sym = m[1].toUpperCase();
+        const cur = sym === '$' || sym === 'USD' ? 'USD' : 'INR';
+        return formatPrice(m[2], cur);
+      }
+
+      // Fetches name, image and price for a product link.
+      // 1. Our own Vercel function (/api/preview) fetches the page directly and
+      //    understands Amazon, Flipkart and Myntra pages.
+      // 2. microlink fills in anything still missing.
+      async function fetchProductDetails(url) {
+        const own = await fetchFromOwnPreview(url);
+        if (own.title && own.img && own.price) return own;
+        const ml = await fetchFromMicrolink(url);
+        return {
+          title: own.title || ml.title,
+          img: own.img || ml.img,
+          price: own.price || ml.price,
+        };
+      }
+
+      async function fetchFromOwnPreview(url) {
+        const details = { title: null, img: null, price: null };
+        try {
+          const r = await fetch(`/api/preview?url=${encodeURIComponent(url)}`);
+          if (!r.ok) return details;
+          const d = await r.json();
+          if (!d.ok) return details;
+          details.title = d.title || null;
+          details.img = d.image || null;
+          details.price = d.price ? formatPrice(d.price, d.currency) : null;
+        } catch(_) {}
+        return details;
+      }
+
+      async function fetchFromMicrolink(url) {
+        const details = { title: null, img: null, price: null };
+        const priceSel = 'meta[property="product:price:amount"],meta[property="og:price:amount"],meta[itemprop="price"],[itemprop="price"]';
+        const curSel = 'meta[property="product:price:currency"],meta[property="og:price:currency"],meta[itemprop="priceCurrency"],[itemprop="priceCurrency"]';
+        const qs = new URLSearchParams({
+          url,
+          'data.price.selector': priceSel,
+          'data.price.attr': 'content',
+          'data.currency.selector': curSel,
+          'data.currency.attr': 'content',
+        });
+        try {
+          const r = await fetch(`https://api.microlink.io/?${qs.toString()}`);
+          const json = await r.json();
+          const d = json.data || {};
+          if (d.title) details.title = d.title;
+          if (d.image?.url) details.img = d.image.url;
+          details.price =
+            formatPrice(d.price, d.currency) ||
+            findPriceInText(d.description) ||
+            findPriceInText(d.title);
+        } catch(_) {}
+        return details;
+      }
+
+      // --- ItemCard with OG image preview via microlink (Req 2.2) ---
+      function ItemLink({ url, title, img: storedImg, price }) {
         // derive favicon from url if no image was stored
         const fallback = React.useMemo(() => {
           try { return `https://www.google.com/s2/favicons?domain=${new URL(url).hostname}&sz=64`; }
@@ -285,24 +428,34 @@
         return (
           <a href={url} target="_blank" rel="noopener noreferrer" className="item-link">
             {imgSrc && <img src={imgSrc} alt={title} className="item-thumb" onError={e => { e.target.style.display='none'; }} />}
-            <span className="item-label">{title}</span>
+            <span className="item-text">
+              <span className="item-label">{title || url}</span>
+              {price && <span className="item-price">{price}</span>}
+            </span>
           </a>
         );
       }
 
       // --- CategorySection (Req 2.1, 2.3) ---
-      function CategorySection({ name, items = [], onRemove }) {
+      function CategorySection({ name, items = [], onRemove, canDelete, onDeleteCategory }) {
         return (
           <section className="category-section">
-            <h2 className="category-heading">{name}</h2>
+            <div className="heading-row">
+              <h2 className="category-heading">{name}</h2>
+              {canDelete && items.length === 0 && (
+                <button className="ghost-btn" onClick={onDeleteCategory} title="Delete this empty category">
+                  Delete category
+                </button>
+              )}
+            </div>
             {items.length === 0 ? (
               <p className="empty-state">No items yet.</p>
             ) : (
               <ul className="item-list">
                 {items.map((item, i) => (
-                  <li key={i} className="item-card">
-                    <ItemLink url={item.url} title={item.title} img={item.img} />
-                    <button className="remove-btn" onClick={() => onRemove(i)} title="Remove">✕</button>
+                  <li key={(item.url || '') + i} className="item-card">
+                    <ItemLink url={item.url} title={item.title} img={item.img} price={item.price} />
+                    <button className="remove-btn" onClick={() => onRemove(item)} title="Remove">✕</button>
                   </li>
                 ))}
               </ul>
@@ -312,16 +465,38 @@
       }
 
       // --- AddLinkForm (Req 1.1, 1.2, 1.3, 1.5) ---
-      function AddLinkForm({ onAddLink }) {
+      function AddLinkForm({ categories, onAddLink, onAddCategory }) {
         const [url, setUrl] = React.useState('');
-        const [category, setCategory] = React.useState(CATEGORIES[0]);
+        const [price, setPrice] = React.useState('');
+        const [category, setCategory] = React.useState(categories[0]);
+        const [newCat, setNewCat] = React.useState('');
+        const [busy, setBusy] = React.useState(false);
+        const [note, setNote] = React.useState({ text: '', error: false });
 
-        function handleSubmit(e) {
+        const creating = category === NEW_CATEGORY_OPTION;
+
+        async function handleSubmit(e) {
           e.preventDefault();
+          if (busy) return;
+          setNote({ text: '', error: false });
+
+          let target = category;
+          if (creating) {
+            const res = await onAddCategory(newCat);
+            if (!res.ok) { setNote({ text: res.message, error: true }); return; }
+            target = res.name;
+            setCategory(res.name);
+            setNewCat('');
+            if (!url.trim()) { setNote({ text: `Category "${res.name}" added.`, error: false }); return; }
+          }
+
           if (!url.trim()) return; // Req 1.3 — empty URL: do nothing
-          onAddLink({ url: url.trim(), category });
-          setUrl('');          // Req 1.5 — clear URL
-          // category intentionally retained (Req 1.5)
+          setBusy(true);
+          setNote({ text: 'Fetching product name, image and price…', error: false });
+          const res = await onAddLink({ url: url.trim(), category: target, manualPrice: price.trim() });
+          setBusy(false);
+          setNote({ text: res.message, error: !res.ok });
+          if (res.ok) { setUrl(''); setPrice(''); } // Req 1.5 — clear URL, keep category
         }
 
         return (
@@ -333,39 +508,56 @@
               value={url}
               onChange={e => setUrl(e.target.value)}
             />
+            <input
+              type="text"
+              className="url-input price-input"
+              placeholder="Price (optional)"
+              value={price}
+              onChange={e => setPrice(e.target.value)}
+            />
             <select
               className="category-select"
               value={category}
               onChange={e => setCategory(e.target.value)}
             >
-              {CATEGORIES.map(cat => (
+              {categories.map(cat => (
                 <option key={cat} value={cat}>{cat}</option>
               ))}
+              <option value={NEW_CATEGORY_OPTION}>+ New category…</option>
             </select>
-            <button type="submit" className="add-btn">Add</button>
+            {creating && (
+              <input
+                type="text"
+                className="url-input"
+                placeholder="New category name"
+                maxLength={40}
+                value={newCat}
+                onChange={e => setNewCat(e.target.value)}
+                autoFocus
+              />
+            )}
+            <button type="submit" className="add-btn" disabled={busy}>
+              {busy ? 'Adding…' : 'Add'}
+            </button>
+            {note.text && <p className={`form-note ${note.error ? 'error' : ''}`}>{note.text}</p>}
           </form>
         );
       }
 
       // --- App root (Req 2.4, 4.1) ---
       function App() {
-        const [data, setData] = React.useState(initialData);
+        const [data, setData] = React.useState({});
         const [loadState, setLoadState] = React.useState('loading'); // 'loading' | 'ok' | 'error'
         const [errorMsg, setErrorMsg] = React.useState('');
 
-        // firestoreLoaded: true only after we receive the first snapshot from Firestore.
-        // We NEVER write to Firestore until this is true.
-        const firestoreLoaded = React.useRef(false);
-
-        // Subscribe to Firestore on mount
+        // Firestore is the single source of truth: the screen only shows what the
+        // snapshot says. Changes are sent as small merges and come back through
+        // the snapshot, so nothing is ever written from stale local state.
         React.useEffect(() => {
           const unsub = window._fbOnSnapshot(
             snapshot => {
-              firestoreLoaded.current = true;
               setLoadState('ok');
-              if (snapshot.exists()) {
-                setData(prev => ({ ...initialData, ...snapshot.data() }));
-              }
+              setData(snapshot.exists() ? snapshot.data() : {});
             },
             err => {
               // Firestore read failed (e.g. security rules blocking access)
@@ -377,40 +569,73 @@
           return unsub;
         }, []);
 
-        // Save to Firestore whenever data changes — but ONLY after the first snapshot.
-        const isFirstRender = React.useRef(true);
-        React.useEffect(() => {
-          if (isFirstRender.current) { isFirstRender.current = false; return; }
-          if (!firestoreLoaded.current) return;
-          window._fbSetDoc(data);
-        }, [data]);
+        const categories = getCategories(data);
+        const customCategories = Array.isArray(data.customCategories) ? data.customCategories : [];
 
-        async function addLink({ url, category }) {
-          const clean = cleanUrl(url);
-
-          let img = null;
-          let title = clean;
-          try { img = `https://www.google.com/s2/favicons?domain=${new URL(clean).hostname}&sz=64`; } catch(_) {}
-
+        async function addCategory(rawName) {
+          const name = rawName.trim().replace(/\s+/g, ' ');
+          if (!name) return { ok: false, message: 'Type a category name first.' };
+          if (name.length > 40) return { ok: false, message: 'Keep the name under 40 characters.' };
+          if (name.startsWith('__') || RESERVED_FIELDS.includes(name))
+            return { ok: false, message: 'That name is not allowed, please pick another.' };
+          const existing = categories.find(c => c.toLowerCase() === name.toLowerCase());
+          if (existing) return { ok: true, name: existing }; // reuse it instead of duplicating
           try {
-            const r = await fetch(`https://api.microlink.io?url=${encodeURIComponent(clean)}`);
-            const json = await r.json();
-            if (json.data?.image?.url) img = json.data.image.url;
-            if (json.data?.title) title = json.data.title;
-          } catch(_) {}
-
-          const item = { url, title, img };
-          setData(prev => ({
-            ...prev,
-            [category]: [...prev[category], item],
-          }));
+            await window._fbAddCategory(name);
+            return { ok: true, name };
+          } catch (err) {
+            console.error(err);
+            return { ok: false, message: 'Could not save the category: ' + (err.message || err) };
+          }
         }
 
-        function removeLink(category, index) {
-          setData(prev => ({
-            ...prev,
-            [category]: prev[category].filter((_, i) => i !== index),
-          }));
+        async function deleteCategory(name) {
+          const items = data[name];
+          if (Array.isArray(items) && items.length > 0) return; // never delete a category with items
+          try { await window._fbRemoveCategory(name); }
+          catch (err) { console.error(err); alert('Could not delete the category: ' + (err.message || err)); }
+        }
+
+        async function addLink({ url, category, manualPrice }) {
+          const clean = cleanUrl(url);
+          const list = Array.isArray(data[category]) ? data[category] : [];
+          if (list.some(it => cleanUrl(it.url) === clean))
+            return { ok: false, message: 'That link is already in ' + category + '.' };
+
+          let img = null;
+          try { img = `https://www.google.com/s2/favicons?domain=${new URL(clean).hostname}&sz=64`; } catch(_) {}
+
+          const details = await fetchProductDetails(clean);
+          const price = manualPrice
+            ? (findPriceInText(manualPrice) || formatPrice(manualPrice, 'INR') || manualPrice)
+            : details.price;
+
+          // Firestore rejects undefined, so every field is a real value or null.
+          const item = {
+            url,
+            title: details.title || clean,
+            img: details.img || img,
+            price: price || null,
+            addedAt: Date.now(),
+          };
+
+          try {
+            await window._fbAddItem(category, item);
+          } catch (err) {
+            console.error(err);
+            return { ok: false, message: 'Could not save the link: ' + (err.message || err) };
+          }
+          return {
+            ok: true,
+            message: item.price
+              ? `Added to ${category}.`
+              : `Added to ${category}. The shop did not share a price, you can type it in next time.`,
+          };
+        }
+
+        async function removeLink(category, item) {
+          try { await window._fbRemoveItem(category, item); }
+          catch (err) { console.error(err); alert('Could not remove the item: ' + (err.message || err)); }
         }
 
         return (
@@ -430,9 +655,18 @@
                 ⚠️ Could not load wishlist: {errorMsg}
               </div>
             )}
-            <AddLinkForm onAddLink={addLink} />
-            {CATEGORIES.map(cat => (
-              <CategorySection key={cat} name={cat} items={data[cat]} onRemove={(i) => removeLink(cat, i)} />
+            {loadState === 'ok' && (
+              <AddLinkForm categories={categories} onAddLink={addLink} onAddCategory={addCategory} />
+            )}
+            {categories.map(cat => (
+              <CategorySection
+                key={cat}
+                name={cat}
+                items={Array.isArray(data[cat]) ? data[cat] : []}
+                onRemove={(item) => removeLink(cat, item)}
+                canDelete={customCategories.includes(cat)}
+                onDeleteCategory={() => deleteCategory(cat)}
+              />
             ))}
           </div>
         );
