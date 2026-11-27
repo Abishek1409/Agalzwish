@@ -3,8 +3,12 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0a0610" />
     <title>Partner Wishlist</title>
     <link rel="icon" type="image/jpeg" href="/logo.jpeg" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
     <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
     <script src="https://unpkg.com/@babel/standalone@7/babel.min.js"></script>
@@ -61,284 +65,715 @@
         });
     </script>
     <style>
-      /* --- Colour tokens (Req 4.1, 4.2, 4.3) --- */
+      /* ============ Theme tokens: pink · black · lavender ============ */
       :root {
-        --bg:       oklch(97% 0.01 280);
-        --surface:  oklch(100% 0 0);
-        --fg:       oklch(20% 0.02 280);
-        --muted:    oklch(55% 0.02 280);
-        --border:   oklch(88% 0.01 280);
-        --accent:   oklch(55% 0.18 280);
-        --accent-h: oklch(48% 0.20 280);
+        --black:      #07040b;
+        --ink:        #0f0a16;
+        --pink:       #ff4fa3;
+        --pink-hot:   #ff2d8d;
+        --pink-soft:  #ffb3d9;
+        --lav:        #b69cff;
+        --lav-soft:   #dccfff;
+        --lav-deep:   #7b5cff;
+        --fg:         #f7f0ff;
+        --muted:      #a99bc0;
+        --glass:      rgba(255, 255, 255, 0.055);
+        --glass-2:    rgba(255, 255, 255, 0.09);
+        --stroke:     rgba(255, 255, 255, 0.12);
+        --stroke-hi:  rgba(255, 179, 217, 0.45);
+        --grad:       linear-gradient(135deg, var(--pink-hot) 0%, #e05bff 50%, var(--lav) 100%);
+        --sheen:      linear-gradient(180deg, rgba(255,255,255,0.22) 0%, rgba(255,255,255,0.04) 45%, rgba(255,255,255,0) 55%);
+        --radius:     22px;
       }
 
-      /* --- Reset & base --- */
       *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
+      html { scroll-behavior: smooth; }
+
       body {
-        background: var(--bg);
+        min-height: 100vh;
+        background: var(--black);
         color: var(--fg);
-        font-family: system-ui, sans-serif;
+        font-family: 'Outfit', system-ui, sans-serif;
         line-height: 1.5;
-        padding: 2rem 1rem 4rem;
+        padding: 2.5rem 1rem 5rem;
+        overflow-x: hidden;
+        -webkit-font-smoothing: antialiased;
       }
 
-      /* --- Centred column --- */
+      /* ---- Animated glowing background blobs ---- */
+      body::before, body::after {
+        content: '';
+        position: fixed;
+        z-index: -2;
+        border-radius: 50%;
+        filter: blur(90px);
+        opacity: 0.55;
+        pointer-events: none;
+        animation: drift 18s ease-in-out infinite alternate;
+      }
+      body::before {
+        width: 55vw; height: 55vw;
+        top: -15vw; left: -12vw;
+        background: radial-gradient(circle, var(--pink-hot) 0%, transparent 65%);
+      }
+      body::after {
+        width: 60vw; height: 60vw;
+        bottom: -20vw; right: -15vw;
+        background: radial-gradient(circle, var(--lav-deep) 0%, transparent 65%);
+        animation-delay: -9s;
+      }
+      .bg-grid {
+        position: fixed; inset: 0; z-index: -1; pointer-events: none;
+        background-image:
+          linear-gradient(rgba(255,255,255,0.035) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(255,255,255,0.035) 1px, transparent 1px);
+        background-size: 44px 44px;
+        mask-image: radial-gradient(ellipse at center, #000 30%, transparent 80%);
+      }
+      @keyframes drift {
+        0%   { transform: translate(0, 0) scale(1); }
+        100% { transform: translate(6vw, 4vw) scale(1.15); }
+      }
+
       .container {
-        max-width: 960px;
+        max-width: 1080px;
         margin: 0 auto;
         display: flex;
         flex-direction: column;
-        gap: 2rem;
+        gap: 1.75rem;
       }
 
-      /* --- Page title --- */
-      .app-title {
-        font-size: 1.75rem;
-        font-weight: 700;
-        letter-spacing: -0.02em;
-        color: var(--fg);
+      /* ---- Glossy glass panel (shared) ---- */
+      .glass {
+        position: relative;
+        background: linear-gradient(160deg, var(--glass-2), var(--glass));
+        border: 1px solid var(--stroke);
+        border-radius: var(--radius);
+        backdrop-filter: blur(18px) saturate(140%);
+        -webkit-backdrop-filter: blur(18px) saturate(140%);
+        box-shadow:
+          0 20px 50px -20px rgba(0,0,0,0.8),
+          inset 0 1px 0 rgba(255,255,255,0.18);
+        overflow: hidden;
+      }
+      .glass::before {           /* top gloss highlight */
+        content: '';
+        position: absolute; inset: 0 0 auto 0;
+        height: 55%;
+        background: var(--sheen);
+        border-radius: inherit;
+        pointer-events: none;
+        opacity: 0.55;
+      }
+
+      /* ---- Hero header ---- */
+      .hero {
         display: flex;
         align-items: center;
-        gap: 0.6rem;
+        gap: 1.1rem;
+        padding: 1.6rem 1.8rem;
       }
-
+      .logo-ring {
+        position: relative;
+        flex-shrink: 0;
+        width: 4rem; height: 4rem;
+        padding: 3px;
+        border-radius: 50%;
+        background: var(--grad);
+        box-shadow: 0 0 28px rgba(255, 79, 163, 0.55), 0 0 60px rgba(182, 156, 255, 0.25);
+        animation: pulse 3.5s ease-in-out infinite;
+      }
       .app-logo {
-        width: 2.2rem;
-        height: 2.2rem;
-        object-fit: contain;
-        border-radius: 6px;
+        width: 100%; height: 100%;
+        object-fit: cover;
+        border-radius: 50%;
+        border: 2px solid var(--black);
+        display: block;
+      }
+      @keyframes pulse {
+        0%, 100% { box-shadow: 0 0 22px rgba(255,79,163,0.5), 0 0 50px rgba(182,156,255,0.2); }
+        50%      { box-shadow: 0 0 34px rgba(255,79,163,0.75), 0 0 80px rgba(182,156,255,0.4); }
+      }
+      .hero-text { display: flex; flex-direction: column; gap: 0.15rem; min-width: 0; }
+      .app-title {
+        font-size: clamp(1.8rem, 4.5vw, 2.7rem);
+        font-weight: 800;
+        letter-spacing: -0.03em;
+        line-height: 1.05;
+        background: linear-gradient(100deg, #fff 0%, var(--pink-soft) 35%, var(--pink) 60%, var(--lav) 100%);
+        background-size: 200% auto;
+        -webkit-background-clip: text;
+        background-clip: text;
+        color: transparent;
+        animation: shine 6s linear infinite;
+      }
+      @keyframes shine { to { background-position: 200% center; } }
+      .hero-sub {
+        color: var(--muted);
+        font-size: 0.95rem;
+        font-weight: 400;
+      }
+      .hero-stat {
+        margin-left: auto;
+        text-align: right;
+        flex-shrink: 0;
+      }
+      .hero-stat b {
+        display: block;
+        font-size: 2rem;
+        font-weight: 700;
+        line-height: 1;
+        background: var(--grad);
+        -webkit-background-clip: text;
+        background-clip: text;
+        color: transparent;
+      }
+      .hero-stat span {
+        font-size: 0.72rem;
+        text-transform: uppercase;
+        letter-spacing: 0.14em;
+        color: var(--muted);
       }
 
-      /* --- Add form (Req 4.1 — above category sections) --- */
+      /* ---- Add form ---- */
       .add-form {
-        background: var(--surface);
-        border: 1px solid var(--border);
-        border-radius: 12px;
-        padding: 1.25rem 1.5rem;
+        padding: 1.1rem;
         display: flex;
-        gap: 0.75rem;
+        gap: 0.7rem;
         flex-wrap: wrap;
         align-items: center;
       }
-
-      .url-input {
-        flex: 1 1 260px;
-        padding: 0.55rem 0.85rem;
-        border: 1px solid var(--border);
-        border-radius: 8px;
+      .url-input, .category-select {
+        position: relative;
+        padding: 0.8rem 1.05rem;
+        border: 1px solid var(--stroke);
+        border-radius: 14px;
+        font: inherit;
         font-size: 0.95rem;
         color: var(--fg);
-        background: var(--bg);
+        background: rgba(0, 0, 0, 0.45);
         outline: none;
-        transition: border-color 0.15s;
+        transition: border-color 0.2s, box-shadow 0.2s, background 0.2s;
       }
-      .url-input:focus { border-color: var(--accent); }
-
+      .url-input { flex: 1 1 160px; min-width: 0; }
+      .url-input::placeholder { color: #7d6f93; }
+      .url-input:focus, .category-select:focus {
+        border-color: var(--pink);
+        background: rgba(0, 0, 0, 0.6);
+        box-shadow: 0 0 0 4px rgba(255, 79, 163, 0.18), 0 0 24px rgba(255, 79, 163, 0.25);
+      }
       .category-select {
-        padding: 0.55rem 0.75rem;
-        border: 1px solid var(--border);
-        border-radius: 8px;
-        font-size: 0.95rem;
-        color: var(--fg);
-        background: var(--bg);
-        outline: none;
         cursor: pointer;
-        transition: border-color 0.15s;
+        appearance: none;
+        -webkit-appearance: none;
+        padding-right: 2.4rem;
+        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%23ffb3d9' stroke-width='2' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+        background-repeat: no-repeat;
+        background-position: right 1rem center;
       }
-      .category-select:focus { border-color: var(--accent); }
+      .category-select option { background: var(--ink); color: var(--fg); }
 
+      /* ---- Glossy candy button ---- */
       .add-btn {
-        padding: 0.55rem 1.25rem;
-        background: var(--accent);
+        position: relative;
+        overflow: hidden;
+        padding: 0.8rem 1.7rem;
+        background: var(--grad);
         color: #fff;
-        border: none;
-        border-radius: 8px;
+        border: 1px solid rgba(255,255,255,0.35);
+        border-radius: 14px;
+        font: inherit;
         font-size: 0.95rem;
-        font-weight: 600;
+        font-weight: 700;
+        letter-spacing: 0.02em;
         cursor: pointer;
-        transition: background 0.15s;
+        text-shadow: 0 1px 2px rgba(120, 0, 60, 0.45);
+        box-shadow:
+          0 10px 30px -8px rgba(255, 45, 141, 0.7),
+          inset 0 1px 0 rgba(255,255,255,0.55),
+          inset 0 -3px 8px rgba(80, 0, 90, 0.35);
+        transition: transform 0.15s, box-shadow 0.2s, filter 0.2s;
       }
-      .add-btn:hover { background: var(--accent-h); }
+      .add-btn::before {       /* glossy top half */
+        content: '';
+        position: absolute; left: 4px; right: 4px; top: 2px;
+        height: 48%;
+        border-radius: 11px 11px 40% 40% / 11px 11px 14px 14px;
+        background: linear-gradient(180deg, rgba(255,255,255,0.6), rgba(255,255,255,0.08));
+        pointer-events: none;
+      }
+      .add-btn::after {        /* sweeping shine */
+        content: '';
+        position: absolute; top: 0; left: -80%;
+        width: 50%; height: 100%;
+        background: linear-gradient(100deg, transparent, rgba(255,255,255,0.55), transparent);
+        transform: skewX(-20deg);
+        transition: left 0.6s ease;
+        pointer-events: none;
+      }
+      .add-btn:hover {
+        transform: translateY(-2px);
+        filter: brightness(1.08) saturate(1.1);
+        box-shadow:
+          0 16px 40px -8px rgba(255, 45, 141, 0.85),
+          0 0 30px rgba(182, 156, 255, 0.35),
+          inset 0 1px 0 rgba(255,255,255,0.6),
+          inset 0 -3px 8px rgba(80, 0, 90, 0.35);
+      }
+      .add-btn:hover::after { left: 130%; }
+      .add-btn:active { transform: translateY(0) scale(0.98); }
+      .add-btn:disabled { opacity: 0.7; cursor: progress; }
 
-      /* --- Category section (Req 4.2) --- */
+      /* ---- Category chip nav ---- */
+      .chip-nav {
+        position: sticky;
+        top: 0.75rem;
+        z-index: 10;
+        display: flex;
+        gap: 0.5rem;
+        padding: 0.6rem;
+        overflow-x: auto;
+        scrollbar-width: none;
+        border-radius: 999px;
+        background: linear-gradient(160deg, rgba(28, 18, 38, 0.88), rgba(12, 8, 18, 0.82));
+      }
+      .chip-nav::-webkit-scrollbar { display: none; }
+      .chip {
+        position: relative;
+        flex-shrink: 0;
+        display: inline-flex;
+        align-items: center;
+        gap: 0.45rem;
+        padding: 0.45rem 0.95rem;
+        border-radius: 999px;
+        border: 1px solid var(--stroke);
+        background: rgba(255,255,255,0.04);
+        color: var(--lav-soft);
+        font-size: 0.85rem;
+        font-weight: 500;
+        text-decoration: none;
+        white-space: nowrap;
+        transition: all 0.2s;
+      }
+      .chip:hover {
+        color: #fff;
+        border-color: var(--stroke-hi);
+        background: rgba(255, 79, 163, 0.14);
+        box-shadow: 0 0 18px rgba(255, 79, 163, 0.3);
+      }
+      .chip-count {
+        min-width: 1.35rem;
+        padding: 0 0.35rem;
+        border-radius: 999px;
+        font-size: 0.72rem;
+        font-weight: 700;
+        line-height: 1.35rem;
+        text-align: center;
+        background: rgba(182, 156, 255, 0.18);
+        color: var(--lav-soft);
+      }
+      .chip.has-items .chip-count {
+        background: var(--grad);
+        color: #fff;
+      }
+
+      /* ---- Category section ---- */
       .category-section {
-        background: var(--surface);
-        border: 1px solid var(--border);
-        border-radius: 12px;
-        padding: 1.25rem 1.5rem;
+        padding: 1.4rem 1.5rem 1.5rem;
+        scroll-margin-top: 5.5rem;
+        transition: border-color 0.3s;
       }
-
+      .category-section:hover { border-color: rgba(182, 156, 255, 0.3); }
+      .category-header {
+        position: relative;
+        display: flex;
+        align-items: center;
+        gap: 0.7rem;
+        margin-bottom: 1.1rem;
+      }
+      .category-icon {
+        width: 2.3rem; height: 2.3rem;
+        display: grid; place-items: center;
+        font-size: 1.15rem;
+        border-radius: 12px;
+        background: linear-gradient(135deg, rgba(255,79,163,0.25), rgba(182,156,255,0.25));
+        border: 1px solid rgba(255,255,255,0.15);
+        box-shadow: inset 0 1px 0 rgba(255,255,255,0.25);
+      }
       .category-heading {
-        font-size: 1.05rem;
-        font-weight: 600;
-        text-transform: uppercase;
-        letter-spacing: 0.06em;
+        font-size: 1.15rem;
+        font-weight: 700;
+        letter-spacing: 0.01em;
+        color: var(--fg);
+      }
+      .category-count {
+        margin-left: auto;
+        font-size: 0.78rem;
+        font-weight: 500;
         color: var(--muted);
-        margin-bottom: 0.85rem;
+        padding: 0.2rem 0.7rem;
+        border-radius: 999px;
+        border: 1px solid var(--stroke);
+      }
+      .category-header::after {    /* gradient underline accent */
+        content: '';
+        position: absolute;
+        left: 0; bottom: -0.55rem;
+        width: 3rem; height: 3px;
+        border-radius: 3px;
+        background: var(--grad);
+        box-shadow: 0 0 12px var(--pink);
       }
 
       .empty-state {
-        font-size: 0.9rem;
-        color: var(--muted);
-        font-style: italic;
-      }
-
-      /* --- Loading / error banner --- */
-      .status-banner {
-        background: var(--surface);
-        border: 1px solid var(--border);
-        border-radius: 12px;
-        padding: 1rem 1.5rem;
-        font-size: 0.9rem;
-        color: var(--muted);
+        position: relative;
         display: flex;
         align-items: center;
         gap: 0.6rem;
+        padding: 1rem 1.1rem;
+        border-radius: 14px;
+        border: 1px dashed rgba(182, 156, 255, 0.25);
+        font-size: 0.9rem;
+        color: var(--muted);
+      }
+
+      /* ---- Status banner ---- */
+      .status-banner {
+        padding: 1rem 1.4rem;
+        font-size: 0.92rem;
+        color: var(--lav-soft);
+        display: flex;
+        align-items: center;
+        gap: 0.7rem;
       }
       .status-banner.error {
-        border-color: oklch(70% 0.18 25);
-        color: oklch(40% 0.2 25);
-        background: oklch(98% 0.02 25);
+        border-color: rgba(255, 80, 110, 0.55);
+        color: #ffc2cf;
+        background: linear-gradient(160deg, rgba(255, 60, 100, 0.18), rgba(255, 60, 100, 0.06));
       }
       .spinner {
-        width: 1rem; height: 1rem;
-        border: 2px solid var(--border);
-        border-top-color: var(--accent);
+        width: 1.1rem; height: 1.1rem;
         border-radius: 50%;
+        background: conic-gradient(from 0deg, transparent, var(--pink), var(--lav));
+        -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 0);
+        mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 0);
         animation: spin 0.8s linear infinite;
         flex-shrink: 0;
       }
       @keyframes spin { to { transform: rotate(360deg); } }
 
-      /* --- Item list --- */
+      /* ---- Item grid ---- */
       .item-list {
+        position: relative;
         list-style: none;
-        display: flex;
-        flex-direction: column;
-        gap: 0.5rem;
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+        gap: 1rem;
       }
-
       .item-card {
-        background: var(--bg);
-        border: 1px solid var(--border);
-        border-radius: 8px;
-        padding: 0.6rem 0.9rem;
-        overflow: hidden;
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 0.5rem;
+        position: relative;
+        border-radius: 18px;
+        padding: 1px;              /* gradient border */
+        background: linear-gradient(160deg, rgba(255,255,255,0.18), rgba(255,255,255,0.03) 40%, rgba(182,156,255,0.15));
+        transition: transform 0.25s cubic-bezier(.2,.8,.2,1), box-shadow 0.25s, background 0.25s;
+        animation: rise 0.45s cubic-bezier(.2,.8,.2,1) both;
+      }
+      .item-card:hover {
+        transform: translateY(-5px);
+        background: var(--grad);
+        box-shadow: 0 18px 40px -12px rgba(255, 45, 141, 0.55), 0 0 30px -6px rgba(182, 156, 255, 0.45);
+      }
+      @keyframes rise {
+        from { opacity: 0; transform: translateY(10px) scale(0.98); }
+        to   { opacity: 1; transform: none; }
       }
 
-      .remove-btn {
-        flex-shrink: 0;
-        background: none;
-        border: 1px solid var(--border);
-        border-radius: 6px;
-        color: var(--muted);
-        font-size: 1rem;
-        line-height: 1;
-        padding: 0.25rem 0.5rem;
-        cursor: pointer;
-        transition: color 0.15s, border-color 0.15s;
-      }
-      .remove-btn:hover { color: oklch(50% 0.2 20); border-color: oklch(50% 0.2 20); }
-
-      /* --- Item link with hover state (Req 4.3) --- */
       .item-link {
         display: flex;
-        align-items: center;
-        gap: 0.75rem;
-        color: var(--accent);
+        flex-direction: column;
+        flex: 1;
+        color: var(--fg);
         text-decoration: none;
-        transition: color 0.15s;
       }
-      .item-link:hover { color: var(--accent-h); }
-
+      .card-body {
+        display: flex;
+        flex-direction: column;
+        height: 100%;
+        border-radius: 17px;
+        overflow: hidden;
+        background: linear-gradient(180deg, #160e20, #0c0812);
+      }
+      .thumb-wrap {
+        position: relative;
+        aspect-ratio: 1 / 1;
+        display: grid;
+        place-items: center;
+        background:
+          radial-gradient(circle at 30% 20%, rgba(255,79,163,0.18), transparent 60%),
+          radial-gradient(circle at 80% 90%, rgba(182,156,255,0.18), transparent 60%),
+          #1a1124;
+        overflow: hidden;
+      }
+      .thumb-wrap::after {         /* glossy glass reflection */
+        content: '';
+        position: absolute; inset: 0;
+        background: linear-gradient(135deg, rgba(255,255,255,0.18) 0%, rgba(255,255,255,0) 38%);
+        pointer-events: none;
+      }
       .item-thumb {
-        width: 72px;
-        height: 72px;
+        width: 100%; height: 100%;
+        object-fit: cover;
+        transition: transform 0.5s cubic-bezier(.2,.8,.2,1);
+      }
+      .item-thumb.is-icon {
+        width: 44%; height: 44%;
         object-fit: contain;
-        border-radius: 6px;
-        flex-shrink: 0;
-        background: var(--surface);
-        border: 1px solid var(--border);
+        border-radius: 14px;
+        filter: drop-shadow(0 6px 18px rgba(255, 79, 163, 0.45));
+      }
+      .item-card:hover .item-thumb { transform: scale(1.07); }
+      .thumb-fallback {
+        font-size: 2.4rem;
+        filter: drop-shadow(0 4px 14px rgba(255, 79, 163, 0.5));
       }
 
       .item-label {
-        font-size: 0.9rem;
+        margin: 0.75rem 0.9rem 0.6rem;
+        font-size: 0.86rem;
+        font-weight: 500;
+        line-height: 1.35;
+        color: var(--lav-soft);
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
         word-break: break-word;
-        text-decoration: none;
+        transition: color 0.2s;
       }
-      .item-text { display: flex; flex-direction: column; gap: 0.2rem; }
-      .item-price {
-        font-size: 0.85rem;
-        font-weight: 700;
-        color: var(--fg);
+      .item-host {
+        display: block;
+        padding: 0 0.9rem 0.55rem;
+        margin-top: auto;
+        font-size: 0.7rem;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--pink);
+        opacity: 0.85;
       }
+      .item-card:hover .item-label { color: #fff; }
 
-      .price-input { flex: 0 1 130px; }
-
-      .item-main { display: flex; flex-direction: column; gap: 0.35rem; min-width: 0; }
-      .price-btn {
-        align-self: flex-start;
-        margin-left: calc(72px + 0.75rem);
-        background: none;
-        border: 1px dashed transparent;
-        border-radius: 6px;
-        padding: 0.1rem 0.4rem;
-        font-size: 0.85rem;
+      /* ---- Price ---- */
+      .price-row {
+        display: flex;
+        align-items: center;
+        padding: 0 0.9rem 0.9rem;
+        min-height: 2.4rem;
+      }
+      .price-tag {
+        position: relative;
+        overflow: hidden;
+        display: inline-flex;
+        align-items: center;
+        gap: 0.35rem;
+        padding: 0.3rem 0.8rem;
+        border-radius: 999px;
+        border: 1px solid rgba(255,255,255,0.3);
+        background: var(--grad);
+        color: #fff;
+        font: inherit;
+        font-size: 0.92rem;
         font-weight: 700;
-        color: var(--fg);
+        letter-spacing: 0.01em;
+        cursor: pointer;
+        text-shadow: 0 1px 2px rgba(120, 0, 60, 0.45);
+        box-shadow: 0 6px 18px -6px rgba(255, 45, 141, 0.7), inset 0 1px 0 rgba(255,255,255,0.5);
+        transition: transform 0.15s, filter 0.2s;
+      }
+      .price-tag::before {
+        content: '';
+        position: absolute; left: 3px; right: 3px; top: 1px;
+        height: 45%;
+        border-radius: 999px;
+        background: linear-gradient(180deg, rgba(255,255,255,0.5), rgba(255,255,255,0.05));
+        pointer-events: none;
+      }
+      .price-tag:hover { transform: translateY(-1px); filter: brightness(1.1); }
+      .price-tag .edit-ico { font-size: 0.7rem; opacity: 0; transition: opacity 0.2s; }
+      .price-tag:hover .edit-ico { opacity: 0.9; }
+      .price-empty {
+        padding: 0.28rem 0.75rem;
+        border-radius: 999px;
+        border: 1px dashed rgba(182, 156, 255, 0.45);
+        background: rgba(182, 156, 255, 0.06);
+        color: var(--lav);
+        font: inherit;
+        font-size: 0.78rem;
+        font-weight: 500;
+        cursor: pointer;
+        transition: all 0.2s;
+      }
+      .price-empty:hover {
+        color: #fff;
+        border-style: solid;
+        border-color: var(--pink);
+        background: rgba(255, 79, 163, 0.15);
+      }
+      .price-edit {
+        display: flex;
+        align-items: center;
+        gap: 0.3rem;
+        width: 100%;
+        padding: 0.15rem 0.2rem 0.15rem 0.7rem;
+        border-radius: 999px;
+        border: 1px solid var(--pink);
+        background: rgba(0,0,0,0.5);
+        box-shadow: 0 0 0 3px rgba(255, 79, 163, 0.18);
+        color: var(--pink-soft);
+        font-weight: 700;
+      }
+      .price-edit input {
+        flex: 1;
+        min-width: 0;
+        border: none;
+        outline: none;
+        background: transparent;
+        color: #fff;
+        font: inherit;
+        font-size: 0.9rem;
+        -moz-appearance: textfield;
+      }
+      .price-edit input::-webkit-outer-spin-button,
+      .price-edit input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+      .price-edit button {
+        width: 1.7rem; height: 1.7rem;
+        flex-shrink: 0;
+        border-radius: 50%;
+        border: none;
+        background: var(--grad);
+        color: #fff;
+        font-size: 0.8rem;
         cursor: pointer;
       }
-      .price-btn:hover { border-color: var(--border); }
-      .price-edit { display: flex; gap: 0.35rem; margin-left: calc(72px + 0.75rem); flex-wrap: wrap; }
-      .price-edit-input {
-        width: 110px;
-        padding: 0.25rem 0.5rem;
-        border: 1px solid var(--border);
-        border-radius: 6px;
+      .price-input-wrap {
+        position: relative;
+        flex: 0 1 150px;
+        display: flex;
+        align-items: center;
+      }
+      .price-input-wrap::before {
+        content: '₹';
+        position: absolute;
+        left: 1rem;
+        color: var(--pink-soft);
+        font-weight: 600;
+        pointer-events: none;
+      }
+      .price-input-wrap .url-input {
+        flex: 1;
+        width: 100%;
+        padding-left: 2rem;
+        -moz-appearance: textfield;
+      }
+      .price-input-wrap .url-input::-webkit-outer-spin-button,
+      .price-input-wrap .url-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+      .category-total {
         font-size: 0.85rem;
-        background: var(--surface);
+        font-weight: 700;
+        background: var(--grad);
+        -webkit-background-clip: text;
+        background-clip: text;
+        color: transparent;
+      }
+      .category-header .category-total + .category-count { margin-left: 0.5rem; }
+      .category-header .category-total { margin-left: auto; }
+      .hero-stats { margin-left: auto; display: flex; gap: 1.6rem; flex-shrink: 0; }
+      .hero-stats .hero-stat { margin-left: 0; }
+
+      .remove-btn {
+        position: absolute;
+        top: 0.55rem; right: 0.55rem;
+        z-index: 2;
+        width: 2rem; height: 2rem;
+        display: grid; place-items: center;
+        border-radius: 50%;
+        border: 1px solid rgba(255,255,255,0.25);
+        background: rgba(10, 6, 16, 0.55);
+        backdrop-filter: blur(8px);
+        -webkit-backdrop-filter: blur(8px);
+        color: #fff;
+        font-size: 0.8rem;
+        line-height: 1;
+        cursor: pointer;
+        opacity: 0;
+        transform: scale(0.85);
+        transition: opacity 0.2s, transform 0.2s, background 0.2s, box-shadow 0.2s;
+      }
+      .item-card:hover .remove-btn,
+      .remove-btn:focus-visible { opacity: 1; transform: scale(1); }
+      .remove-btn:hover {
+        background: var(--pink-hot);
+        border-color: rgba(255,255,255,0.5);
+        box-shadow: 0 0 18px rgba(255, 45, 141, 0.8);
+      }
+      @media (hover: none) {
+        .remove-btn { opacity: 1; transform: none; }
       }
 
-      .add-btn:disabled { opacity: 0.6; cursor: wait; }
+      .footer {
+        text-align: center;
+        font-size: 0.8rem;
+        color: var(--muted);
+        opacity: 0.7;
+      }
+      .footer span { color: var(--pink); }
 
+      @media (max-width: 560px) {
+        body { padding-top: 1.25rem; }
+        .hero { padding: 1.2rem; gap: 0.85rem; }
+        .logo-ring { width: 3.2rem; height: 3.2rem; }
+        .hero-stat b { font-size: 1.5rem; }
+        .hero { flex-wrap: wrap; }
+        .hero-stats { width: 100%; justify-content: space-around; padding-top: 0.8rem; border-top: 1px solid var(--stroke); }
+        .hero-stats .hero-stat { text-align: center; }
+        .price-input-wrap { flex: 1 1 100%; }
+        .add-btn { flex: 1 1 100%; }
+        .category-select { flex: 1 1 100%; }
+        .item-list { grid-template-columns: repeat(2, 1fr); gap: 0.7rem; }
+        .category-section { padding: 1.1rem; }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        *, *::before, *::after { animation: none !important; transition: none !important; }
+      }
+
+      /* ---- Extras for the live version (notes, custom categories, edit buttons) ---- */
       .form-note {
         flex-basis: 100%;
         font-size: 0.85rem;
-        color: var(--muted);
+        color: var(--lav-soft);
+        padding: 0.1rem 0.3rem 0;
       }
-      .form-note.error { color: oklch(45% 0.2 25); }
-
-      .heading-row {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 0.5rem;
-        margin-bottom: 0.85rem;
-      }
-      .heading-row .category-heading { margin-bottom: 0; }
-
+      .form-note.error { color: #ff9fb6; }
+      .new-cat-input { flex: 1 1 180px; }
       .ghost-btn {
-        background: none;
-        border: 1px solid var(--border);
-        border-radius: 6px;
+        padding: 0.3rem 0.8rem;
+        border-radius: 999px;
+        border: 1px solid var(--stroke);
+        background: rgba(255,255,255,0.04);
         color: var(--muted);
-        font-size: 0.8rem;
-        padding: 0.25rem 0.6rem;
+        font: inherit;
+        font-size: 0.75rem;
         cursor: pointer;
+        transition: all 0.2s;
       }
-      .ghost-btn:hover { color: var(--accent); border-color: var(--accent); }
-      .item-link:hover .item-label {
-        text-decoration: underline;
-        text-decoration-color: var(--accent-h);
-      }
+      .ghost-btn:hover { color: #fff; border-color: var(--pink); background: rgba(255,79,163,0.15); }
+      .price-edit .cancel-btn { background: rgba(255,255,255,0.12); }
+      .price-edit button:disabled { opacity: 0.6; cursor: wait; }
     </style>
   </head>
   <body>
+    <div class="bg-grid"></div>
     <div id="root"></div>
     <script type="text/babel">
       // --- Constants & Data Model (Req 1.4) ---
@@ -527,26 +962,50 @@
           return (
             <form className="price-edit" onSubmit={save}>
               <input
-                className="price-edit-input"
                 value={value}
                 onChange={e => setValue(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Escape') { setEditing(false); setValue(price || ''); } }}
                 placeholder="e.g. 1299"
                 inputMode="decimal"
+                aria-label="Price"
                 autoFocus
               />
-              <button className="ghost-btn" type="submit" disabled={saving}>{saving ? '…' : 'Save'}</button>
-              <button className="ghost-btn" type="button" onClick={() => { setEditing(false); setValue(price || ''); }}>Cancel</button>
+              <button type="submit" disabled={saving} aria-label="Save price">{saving ? '…' : '✓'}</button>
+              <button type="button" className="cancel-btn" aria-label="Cancel" onClick={() => { setEditing(false); setValue(price || ''); }}>✕</button>
             </form>
           );
         }
-        return (
-          <button className="price-btn" onClick={() => { setValue(price || ''); setEditing(true); }} title="Edit price">
-            {price ? price : '+ Add price'}
-          </button>
-        );
+        return price
+          ? <button className="price-tag" onClick={() => { setValue(price || ''); setEditing(true); }} title="Edit price">
+              {price}<span className="edit-ico">✎</span>
+            </button>
+          : <button className="price-empty" onClick={() => { setValue(''); setEditing(true); }}>+ Add price</button>;
       }
 
-      function ItemLink({ url, title, img: storedImg, price }) {
+      // --- Visual helpers for the glossy theme ---
+      const CATEGORY_ICONS = {
+        Bags: '👜', Kurta: '🥻', Sarees: '🪷', Gowns: '👗', Tshirt: '👕',
+        Shirt: '👚', Watch: '⌚', Skirt: '💃', Shoes: '👠', Accessories: '💍',
+      };
+      const iconFor = (name) => CATEGORY_ICONS[name] || '✨';
+
+      function hostOf(url) {
+        try { return new URL(url).hostname.replace(/^www\./, ''); }
+        catch(_) { return ''; }
+      }
+
+      // Prices are stored as text such as "₹1,549.00". Totals count rupee prices only.
+      function priceAmount(p) {
+        if (!p) return 0;
+        const s = String(p);
+        if (/\$|USD/i.test(s)) return 0;
+        const n = Number(s.replace(/[^0-9.]/g, ''));
+        return isFinite(n) && n > 0 ? n : 0;
+      }
+      const inrWhole = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 });
+      const sumPrices = (items = []) => items.reduce((t, it) => t + priceAmount(it.price), 0);
+
+      function ItemLink({ url, title, img: storedImg, icon }) {
         // derive favicon from url if no image was stored
         const fallback = React.useMemo(() => {
           try { return `https://www.google.com/s2/favicons?domain=${new URL(url).hostname}&sz=64`; }
@@ -554,40 +1013,52 @@
         }, [url]);
 
         const imgSrc = storedImg || fallback;
+        const isIcon = !imgSrc || imgSrc.includes('google.com/s2/favicons');
+        const [broken, setBroken] = React.useState(false);
 
         return (
           <a href={url} target="_blank" rel="noopener noreferrer" className="item-link">
-            {imgSrc && <img src={imgSrc} alt={title} className="item-thumb" onError={e => { e.target.style.display='none'; }} />}
-            <span className="item-text">
-              <span className="item-label">{title || url}</span>
-            </span>
+            <div className="thumb-wrap">
+              {imgSrc && !broken
+                ? <img src={imgSrc} alt={title} className={'item-thumb' + (isIcon ? ' is-icon' : '')} onError={() => setBroken(true)} />
+                : <span className="thumb-fallback">{icon}</span>}
+            </div>
+            <span className="item-label">{title || url}</span>
+            <span className="item-host">{hostOf(url)}</span>
           </a>
         );
       }
 
       // --- CategorySection (Req 2.1, 2.3) ---
       function CategorySection({ name, items = [], onRemove, onPriceChange, canDelete, onDeleteCategory }) {
+        const icon = iconFor(name);
+        const total = sumPrices(items);
         return (
-          <section className="category-section">
-            <div className="heading-row">
+          <section className="category-section glass" id={`cat-${name}`}>
+            <div className="category-header">
+              <span className="category-icon">{icon}</span>
               <h2 className="category-heading">{name}</h2>
+              {total > 0 && <span className="category-total">{inrWhole.format(total)}</span>}
+              <span className="category-count">{items.length} {items.length === 1 ? 'item' : 'items'}</span>
               {canDelete && items.length === 0 && (
                 <button className="ghost-btn" onClick={onDeleteCategory} title="Delete this empty category">
-                  Delete category
+                  Delete
                 </button>
               )}
             </div>
             {items.length === 0 ? (
-              <p className="empty-state">No items yet.</p>
+              <p className="empty-state">✨ Nothing here yet — paste a link above to add something.</p>
             ) : (
               <ul className="item-list">
                 {items.map((item, i) => (
-                  <li key={(item.url || '') + i} className="item-card">
-                    <div className="item-main">
-                      <ItemLink url={item.url} title={item.title} img={item.img} />
-                      <PriceTag price={item.price} onSave={(p) => onPriceChange(item, p)} />
+                  <li key={(item.url || '') + i} className="item-card" style={{ animationDelay: `${Math.min(i, 8) * 40}ms` }}>
+                    <div className="card-body">
+                      <ItemLink url={item.url} title={item.title} img={item.img} icon={icon} />
+                      <div className="price-row">
+                        <PriceTag price={item.price} onSave={(p) => onPriceChange(item, p)} />
+                      </div>
                     </div>
-                    <button className="remove-btn" onClick={() => onRemove(item)} title="Remove">✕</button>
+                    <button className="remove-btn" onClick={() => onRemove(item)} title="Remove" aria-label="Remove item">✕</button>
                   </li>
                 ))}
               </ul>
@@ -634,36 +1105,40 @@
         }
 
         return (
-          <form className="add-form" onSubmit={handleSubmit}>
+          <form className="add-form glass" onSubmit={handleSubmit}>
             <input
               type="text"
               inputMode="url"
               className="url-input"
-              placeholder="Paste product link or share message…"
+              placeholder="✨ Paste a product link…"
               value={url}
               onChange={e => setUrl(e.target.value)}
             />
-            <input
-              type="text"
-              className="url-input price-input"
-              placeholder="Price (optional)"
-              value={price}
-              onChange={e => setPrice(e.target.value)}
-            />
+            <div className="price-input-wrap">
+              <input
+                type="text"
+                inputMode="decimal"
+                className="url-input"
+                placeholder="Price"
+                aria-label="Price (optional)"
+                value={price}
+                onChange={e => setPrice(e.target.value)}
+              />
+            </div>
             <select
               className="category-select"
               value={category}
               onChange={e => setCategory(e.target.value)}
             >
               {categories.map(cat => (
-                <option key={cat} value={cat}>{cat}</option>
+                <option key={cat} value={cat}>{iconFor(cat)}  {cat}</option>
               ))}
               <option value={NEW_CATEGORY_OPTION}>+ New category…</option>
             </select>
             {creating && (
               <input
                 type="text"
-                className="url-input"
+                className="url-input new-cat-input"
                 placeholder="New category name"
                 maxLength={40}
                 value={newCat}
@@ -672,7 +1147,7 @@
               />
             )}
             <button type="submit" className="add-btn" disabled={busy}>
-              {busy ? 'Adding…' : 'Add'}
+              {busy ? 'Adding…' : 'Add to wishlist'}
             </button>
             {note.text && <p className={`form-note ${note.error ? 'error' : ''}`}>{note.text}</p>}
           </form>
@@ -780,25 +1255,59 @@
           catch (err) { console.error(err); alert('Could not save the price: ' + (err.message || err)); return false; }
         }
 
+        const listOf = (cat) => Array.isArray(data[cat]) ? data[cat] : [];
+        const totalItems = categories.reduce((n, c) => n + listOf(c).length, 0);
+        const totalValue = categories.reduce((n, c) => n + sumPrices(listOf(c)), 0);
+
         return (
           <div className="container">
-            <h1 className="app-title">
-              <img src="/logo.jpeg" alt="logo" className="app-logo" />
-              Partner Wishlist
-            </h1>
+            <header className="hero glass">
+              <div className="logo-ring">
+                <img src="/logo.jpeg" alt="logo" className="app-logo" />
+              </div>
+              <div className="hero-text">
+                <h1 className="app-title">Partner Wishlist</h1>
+                <p className="hero-sub">Every little wish, saved in one place 💖</p>
+              </div>
+              <div className="hero-stats">
+                {totalValue > 0 && (
+                  <div className="hero-stat">
+                    <b>{inrWhole.format(totalValue)}</b>
+                    <span>total</span>
+                  </div>
+                )}
+                <div className="hero-stat">
+                  <b>{totalItems}</b>
+                  <span>wishes</span>
+                </div>
+              </div>
+            </header>
             {loadState === 'loading' && (
-              <div className="status-banner">
+              <div className="status-banner glass">
                 <div className="spinner" />
                 Connecting to database…
               </div>
             )}
             {loadState === 'error' && (
-              <div className="status-banner error">
+              <div className="status-banner glass error">
                 ⚠️ Could not load wishlist: {errorMsg}
               </div>
             )}
             {loadState === 'ok' && (
               <AddLinkForm categories={categories} onAddLink={addLink} onAddCategory={addCategory} />
+            )}
+            {loadState === 'ok' && (
+              <nav className="chip-nav glass">
+                {categories.map(cat => {
+                  const n = listOf(cat).length;
+                  return (
+                    <a key={cat} href={`#cat-${cat}`} className={'chip' + (n ? ' has-items' : '')}>
+                      {iconFor(cat)} {cat}
+                      <span className="chip-count">{n}</span>
+                    </a>
+                  );
+                })}
+              </nav>
             )}
             {categories.map(cat => (
               <CategorySection
@@ -811,6 +1320,7 @@
                 onDeleteCategory={() => deleteCategory(cat)}
               />
             ))}
+            <footer className="footer">made with <span>♥</span></footer>
           </div>
         );
       }
